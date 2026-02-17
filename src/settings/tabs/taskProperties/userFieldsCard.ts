@@ -121,7 +121,7 @@ function createDefaultValueInput(
 	return { element: inputElement, row };
 }
 
-function parseKanbanColumnValues(rawValue: string): string[] | undefined {
+function parseValuesList(rawValue: string): string[] | undefined {
 	const values: string[] = [];
 	const seen = new Set<string>();
 
@@ -342,8 +342,9 @@ function renderUserFieldsList(
 			field.type = typeSelect.value as "text" | "number" | "boolean" | "date" | "list";
 			// Clear default value when type changes to avoid type mismatches
 			field.defaultValue = undefined;
-			// Kanban preset columns only apply to text/list custom fields
+			// Preset values only apply to text/list custom fields
 			if (field.type !== "text" && field.type !== "list") {
+				field.values = undefined;
 				field.kanbanColumnValues = undefined;
 			}
 			save();
@@ -361,24 +362,28 @@ function renderUserFieldsList(
 			}
 		);
 
-		let kanbanColumnsRow: CardRow | undefined;
+		let valuesRow: CardRow | undefined;
 		if (field.type === "text" || field.type === "list") {
-			const kanbanColumnsInput = createCardInput(
+			const valuesInput = createCardInput(
 				"text",
-				translate("settings.taskProperties.customUserFields.placeholders.kanbanColumnValues"),
-				Array.isArray(field.kanbanColumnValues)
-					? field.kanbanColumnValues.join(", ")
+				translate("settings.taskProperties.customUserFields.placeholders.values"),
+				Array.isArray(field.values)
+					? field.values.join(", ")
+					: Array.isArray(field.kanbanColumnValues)
+						? field.kanbanColumnValues.join(", ")
 					: ""
 			);
 
-			kanbanColumnsInput.addEventListener("change", () => {
-				field.kanbanColumnValues = parseKanbanColumnValues(kanbanColumnsInput.value);
+			valuesInput.addEventListener("change", () => {
+				field.values = parseValuesList(valuesInput.value);
+				// Clear legacy key after save to avoid duplicated schema fields.
+				field.kanbanColumnValues = undefined;
 				save();
 			});
 
-			kanbanColumnsRow = {
-				label: translate("settings.taskProperties.customUserFields.fields.kanbanColumnValues"),
-				input: kanbanColumnsInput,
+			valuesRow = {
+				label: translate("settings.taskProperties.customUserFields.fields.values"),
+				input: valuesInput,
 			};
 		}
 
@@ -528,7 +533,7 @@ function renderUserFieldsList(
 								input: typeSelect,
 							},
 							defaultValueRow,
-							...(kanbanColumnsRow ? [kanbanColumnsRow] : []),
+							...(valuesRow ? [valuesRow] : []),
 							...nlpRows,
 						],
 					},

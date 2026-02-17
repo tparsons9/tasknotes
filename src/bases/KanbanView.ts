@@ -596,9 +596,11 @@ export class KanbanView extends BasesViewBase {
 			return;
 		}
 
-		const presetValues = Array.isArray(matchedField.kanbanColumnValues)
-			? matchedField.kanbanColumnValues
-			: [];
+		const presetValues = Array.isArray(matchedField.values)
+			? matchedField.values
+			: Array.isArray(matchedField.kanbanColumnValues)
+				? matchedField.kanbanColumnValues
+				: [];
 		if (presetValues.length === 0) {
 			return;
 		}

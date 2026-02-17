@@ -28,7 +28,7 @@ describe("Kanban custom user field empty column augmentation", () => {
 				displayName: "Roadmap",
 				key: "roadmap",
 				type: "text",
-				kanbanColumnValues: ["backlog", "in-progress", "done"],
+				values: ["backlog", "in-progress", "done"],
 			},
 		]);
 
@@ -49,7 +49,7 @@ describe("Kanban custom user field empty column augmentation", () => {
 				displayName: "Roadmap",
 				key: "roadmap",
 				type: "text",
-				kanbanColumnValues: ["backlog", "in-progress", "done"],
+				values: ["backlog", "in-progress", "done"],
 			},
 		]);
 
@@ -67,14 +67,14 @@ describe("Kanban custom user field empty column augmentation", () => {
 				key: "roadmap",
 				type: "text",
 			},
-			{
-				id: "phase",
-				displayName: "Phase",
-				key: "phase",
-				type: "list",
-				kanbanColumnValues: [],
-			},
-		]);
+				{
+					id: "phase",
+					displayName: "Phase",
+					key: "phase",
+					type: "list",
+					values: [],
+				},
+			]);
 
 		const textGroups = new Map<string, any[]>([["existing", []]]);
 		(view as any).augmentWithEmptyCustomUserFieldColumns(textGroups, "note.roadmap");
@@ -94,7 +94,7 @@ describe("Kanban custom user field empty column augmentation", () => {
 					displayName: "Custom",
 					key: "custom",
 					type,
-					kanbanColumnValues: ["one", "two"],
+					values: ["one", "two"],
 				},
 			]);
 
@@ -112,7 +112,7 @@ describe("Kanban custom user field empty column augmentation", () => {
 				displayName: "Roadmap",
 				key: "roadmap",
 				type: "text",
-				kanbanColumnValues: ["backlog", "done"],
+				values: ["backlog", "done"],
 			},
 		]);
 
@@ -123,5 +123,24 @@ describe("Kanban custom user field empty column augmentation", () => {
 
 		expect(groups.get("done")).toBe(existingDoneTasks);
 		expect(groups.get("backlog")).toEqual([]);
+	});
+
+	it("supports legacy kanbanColumnValues for backward compatibility", () => {
+		const view = createKanbanView([
+			{
+				id: "roadmap",
+				displayName: "Roadmap",
+				key: "roadmap",
+				type: "text",
+				kanbanColumnValues: ["backlog", "in-progress"],
+			},
+		]);
+
+		const groups = new Map<string, any[]>([["done", []]]);
+		(view as any).augmentWithEmptyCustomUserFieldColumns(groups, "note.roadmap");
+
+		expect(groups.has("backlog")).toBe(true);
+		expect(groups.has("in-progress")).toBe(true);
+		expect(groups.has("done")).toBe(true);
 	});
 });
