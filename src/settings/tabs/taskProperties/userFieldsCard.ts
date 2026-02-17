@@ -121,6 +121,20 @@ function createDefaultValueInput(
 	return { element: inputElement, row };
 }
 
+function parseKanbanColumnValues(rawValue: string): string[] | undefined {
+	const values: string[] = [];
+	const seen = new Set<string>();
+
+	for (const part of rawValue.split(",")) {
+		const value = part.trim();
+		if (!value || seen.has(value)) continue;
+		seen.add(value);
+		values.push(value);
+	}
+
+	return values.length > 0 ? values : undefined;
+}
+
 /**
  * Renders the user fields section with add button
  */
@@ -328,6 +342,10 @@ function renderUserFieldsList(
 			field.type = typeSelect.value as "text" | "number" | "boolean" | "date" | "list";
 			// Clear default value when type changes to avoid type mismatches
 			field.defaultValue = undefined;
+			// Kanban preset columns only apply to text/list custom fields
+			if (field.type !== "text" && field.type !== "list") {
+				field.kanbanColumnValues = undefined;
+			}
 			save();
 			// Need to re-render to update the default value input type
 			renderUserFieldsList(container, plugin, save, translate, field.id);
@@ -342,6 +360,27 @@ function renderUserFieldsList(
 				save();
 			}
 		);
+
+		let kanbanColumnsRow: CardRow | undefined;
+		if (field.type === "text" || field.type === "list") {
+			const kanbanColumnsInput = createCardInput(
+				"text",
+				translate("settings.taskProperties.customUserFields.placeholders.kanbanColumnValues"),
+				Array.isArray(field.kanbanColumnValues)
+					? field.kanbanColumnValues.join(", ")
+					: ""
+			);
+
+			kanbanColumnsInput.addEventListener("change", () => {
+				field.kanbanColumnValues = parseKanbanColumnValues(kanbanColumnsInput.value);
+				save();
+			});
+
+			kanbanColumnsRow = {
+				label: translate("settings.taskProperties.customUserFields.fields.kanbanColumnValues"),
+				input: kanbanColumnsInput,
+			};
+		}
 
 		// NLP Trigger for user field
 		const nlpRows = createNLPTriggerRows(
@@ -489,6 +528,7 @@ function renderUserFieldsList(
 								input: typeSelect,
 							},
 							defaultValueRow,
+							...(kanbanColumnsRow ? [kanbanColumnsRow] : []),
 							...nlpRows,
 						],
 					},

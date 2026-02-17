@@ -1166,12 +1166,14 @@ export const en: TranslationTree = {
 					propertyKey: "Property Key:",
 					type: "Type:",
 					defaultValue: "Default Value:",
+					kanbanColumnValues: "Kanban Column Values:",
 				},
 				placeholders: {
 					displayName: "Display Name",
 					propertyKey: "property-name",
 					defaultValue: "Default value",
 					defaultValueList: "Default values (comma-separated)",
+					kanbanColumnValues: "Column values (comma-separated)",
 				},
 				types: {
 					text: "Text",

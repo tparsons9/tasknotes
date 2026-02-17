@@ -427,6 +427,9 @@ export class KanbanView extends BasesViewBase {
 		// Augment with empty priority columns if grouping by priority
 		this.augmentWithEmptyPriorityColumns(groups, groupByPropertyId);
 
+		// Augment with empty columns for custom user fields with preset column values
+		this.augmentWithEmptyCustomUserFieldColumns(groups, groupByPropertyId);
+
 		return groups;
 	}
 
@@ -566,6 +569,47 @@ export class KanbanView extends BasesViewBase {
 			if (!groups.has(priorityValue)) {
 				// This priority has no tasks - add an empty group
 				groups.set(priorityValue, []);
+			}
+		}
+	}
+
+	/**
+	 * Augment groups with empty columns for custom user fields that define preset kanban values.
+	 * Applies only to text/list custom field types.
+	 */
+	private augmentWithEmptyCustomUserFieldColumns(
+		groups: Map<string, TaskInfo[]>,
+		groupByPropertyId: string
+	): void {
+		const cleanGroupBy = groupByPropertyId.replace(/^(note\.|file\.|task\.)/, "");
+		const userFields = this.plugin.settings.userFields;
+		if (!Array.isArray(userFields) || userFields.length === 0) {
+			return;
+		}
+
+		const matchedField = userFields.find((field) => field?.key === cleanGroupBy);
+		if (!matchedField) {
+			return;
+		}
+
+		if (matchedField.type !== "text" && matchedField.type !== "list") {
+			return;
+		}
+
+		const presetValues = Array.isArray(matchedField.kanbanColumnValues)
+			? matchedField.kanbanColumnValues
+			: [];
+		if (presetValues.length === 0) {
+			return;
+		}
+
+		for (const value of presetValues) {
+			if (typeof value !== "string" || value.length === 0) {
+				continue;
+			}
+
+			if (!groups.has(value)) {
+				groups.set(value, []);
 			}
 		}
 	}

@@ -16,6 +16,7 @@ export interface UserMappedField {
 	type: "text" | "number" | "date" | "boolean" | "list";
 	autosuggestFilter?: FileFilterConfig; // Optional filter configuration for file suggestions
 	defaultValue?: string | number | boolean | string[]; // Default value for the field
+	kanbanColumnValues?: string[]; // Optional preset kanban column values for text/list grouping
 }
 
 /**
