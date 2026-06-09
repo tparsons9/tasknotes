@@ -22,6 +22,7 @@ import {
 	applyPropertyTaskIdentifier,
 	getFrontmatterTags,
 } from "../../utils/taskIdentificationFrontmatter";
+import { resolveProjectTaskFolder } from "../../utils/projectTaskFolderRouting";
 import type { UserMappedField } from "../../types/settings";
 import { createTaskNotesLogger } from "../../utils/tasknotesLogger";
 
@@ -73,6 +74,8 @@ type TaskCreationSettings = Pick<
 	| "taskPropertyName"
 	| "taskPropertyValue"
 	| "inlineTaskConvertFolder"
+	| "enableProjectSubfolderTaskRouting"
+	| "projectAutosuggest"
 	| "tasksFolder"
 	| "googleCalendarExport"
 > &
@@ -391,9 +394,40 @@ export class TaskCreationService {
 			.replace(/\{\{currentNoteTitle\}\}/g, currentFile?.basename || "");
 	}
 
+	private getActiveFolderPath(): string | undefined {
+		const currentFile = this.deps.runtime.app.workspace.getActiveFile();
+		if (currentFile?.parent?.path !== undefined) {
+			return currentFile.parent.path;
+		}
+		if (typeof currentFile?.path === "string") {
+			return currentFile.path.split("/").slice(0, -1).join("/");
+		}
+		return undefined;
+	}
+
+	private resolveProjectSubfolder(taskData: TaskCreationData): string | null {
+		const { runtime } = this.deps;
+		if (!runtime.settings.enableProjectSubfolderTaskRouting) {
+			return null;
+		}
+
+		return resolveProjectTaskFolder({
+			app: runtime.app,
+			projects: taskData.projects,
+			includeFolders: runtime.settings.projectAutosuggest?.includeFolders,
+			activeFolder: this.getActiveFolderPath(),
+			sourcePath: runtime.app.workspace.getActiveFile()?.path,
+		});
+	}
+
 	private async resolveTargetFolder(taskData: TaskCreationData): Promise<string> {
 		const { runtime } = this.deps;
 		let folder = "";
+
+		const projectFolder = this.resolveProjectSubfolder(taskData);
+		if (projectFolder) {
+			return projectFolder;
+		}
 
 		if (
 			taskData.creationContext === "inline-conversion" ||

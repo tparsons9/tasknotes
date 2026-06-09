@@ -400,6 +400,31 @@ describe('TaskService', () => {
       );
     });
 
+    it('should route manually-created tasks to the first watched project subfolder when enabled', async () => {
+      mockPlugin.settings.enableProjectSubfolderTaskRouting = true;
+      mockPlugin.settings.tasksFolder = 'TaskNotes/Tasks';
+      mockPlugin.settings.inlineTaskConvertFolder = 'InlineTasks';
+      mockPlugin.settings.projectAutosuggest = {
+        enableFuzzy: false,
+        rows: [],
+        includeFolders: ['Projects']
+      };
+
+      const projectFile = new TFile('Projects/Course Alpha/Overview.md');
+      mockPlugin.app.metadataCache.getFirstLinkpathDest = jest.fn().mockReturnValue(projectFile);
+
+      await taskService.createTask({
+        title: 'Manual project task',
+        projects: ['[[Projects/Course Alpha/Overview]]'],
+        creationContext: 'manual-creation'
+      });
+
+      expect(mockPlugin.app.vault.create).toHaveBeenCalledWith(
+        'Projects/Course Alpha/manual-project-task.md',
+        expect.stringContaining('title: Manual project task')
+      );
+    });
+
     // Additional test to clarify the expected behavior difference between command types
     it('should still use inlineTaskConvertFolder for inline-conversion context (#1424)', async () => {
       // Configure both folders
@@ -449,6 +474,56 @@ describe('TaskService', () => {
       expect(mockPlugin.app.vault.create).toHaveBeenCalledWith(
         'Projects/MyProject/follow-up-on-meeting.md',
         expect.stringContaining('title: Follow up on meeting')
+      );
+    });
+
+    it('should route inline-created tasks to the first watched project subfolder when enabled', async () => {
+      mockPlugin.settings.enableProjectSubfolderTaskRouting = true;
+      mockPlugin.settings.tasksFolder = 'TaskNotes/Tasks';
+      mockPlugin.settings.inlineTaskConvertFolder = 'InlineTasks';
+      mockPlugin.settings.projectAutosuggest = {
+        enableFuzzy: false,
+        rows: [],
+        includeFolders: ['Projects']
+      };
+
+      const projectFile = new TFile('Projects/Course Alpha/Overview.md');
+      mockPlugin.app.metadataCache.getFirstLinkpathDest = jest.fn().mockReturnValue(projectFile);
+
+      await taskService.createTask({
+        title: 'Read chapter',
+        projects: ['[[Projects/Course Alpha/Overview]]'],
+        creationContext: 'inline-conversion'
+      });
+
+      expect(mockPlugin.app.vault.create).toHaveBeenCalledWith(
+        'Projects/Course Alpha/read-chapter.md',
+        expect.stringContaining('title: Read chapter')
+      );
+    });
+
+    it('should fall back to the inline-created task folder when project subfolder routing does not match', async () => {
+      mockPlugin.settings.enableProjectSubfolderTaskRouting = true;
+      mockPlugin.settings.tasksFolder = 'TaskNotes/Tasks';
+      mockPlugin.settings.inlineTaskConvertFolder = 'InlineTasks';
+      mockPlugin.settings.projectAutosuggest = {
+        enableFuzzy: false,
+        rows: [],
+        includeFolders: ['Projects']
+      };
+
+      const projectFile = new TFile('Projects/Overview.md');
+      mockPlugin.app.metadataCache.getFirstLinkpathDest = jest.fn().mockReturnValue(projectFile);
+
+      await taskService.createTask({
+        title: 'Root project task',
+        projects: ['[[Projects/Overview]]'],
+        creationContext: 'inline-conversion'
+      });
+
+      expect(mockPlugin.app.vault.create).toHaveBeenCalledWith(
+        'InlineTasks/root-project-task.md',
+        expect.stringContaining('title: Root project task')
       );
     });
 
@@ -894,6 +969,94 @@ describe('TaskService', () => {
       // Should not throw, just log error
       const result = await taskService.updateProperty(task, 'priority', 'high');
       expect(result.priority).toBe('high');
+    });
+
+    it('should move a task to the watched project subfolder when projects are added later', async () => {
+      const projectTask = TaskFactory.createTask({
+        path: 'TaskNotes/Tasks/read-chapter.md',
+        projects: []
+      });
+      const originalFile = new TFile(projectTask.path);
+      const projectFile = new TFile('Projects/Course Alpha/Overview.md');
+
+      mockPlugin.settings.enableProjectSubfolderTaskRouting = true;
+      mockPlugin.settings.projectAutosuggest = {
+        enableFuzzy: false,
+        rows: [],
+        includeFolders: ['Projects']
+      };
+      mockPlugin.app.metadataCache.getFirstLinkpathDest = jest.fn().mockReturnValue(projectFile);
+      mockPlugin.app.vault.getAbstractFileByPath.mockImplementation((path: string) =>
+        path === projectTask.path ? originalFile : null
+      );
+      mockPlugin.app.fileManager.renameFile = jest.fn().mockResolvedValue(undefined);
+      mockPlugin.cacheManager.getTaskInfo.mockResolvedValue(projectTask);
+
+      const result = await taskService.updateProperty(projectTask, 'projects', [
+        '[[Projects/Course Alpha/Overview]]'
+      ]);
+
+      expect(mockPlugin.app.fileManager.renameFile).toHaveBeenCalledWith(
+        originalFile,
+        'Projects/Course Alpha/read-chapter.md'
+      );
+      expect(mockPlugin.cacheManager.clearCacheEntry).toHaveBeenCalledWith(projectTask.path);
+      expect(result.path).toBe('Projects/Course Alpha/read-chapter.md');
+    });
+
+    it('should not move a task back when watched projects are removed', async () => {
+      const projectTask = TaskFactory.createTask({
+        path: 'Projects/Course Alpha/read-chapter.md',
+        projects: ['[[Projects/Course Alpha/Overview]]']
+      });
+      const originalFile = new TFile(projectTask.path);
+
+      mockPlugin.settings.enableProjectSubfolderTaskRouting = true;
+      mockPlugin.settings.projectAutosuggest = {
+        enableFuzzy: false,
+        rows: [],
+        includeFolders: ['Projects']
+      };
+      mockPlugin.app.vault.getAbstractFileByPath.mockReturnValue(originalFile);
+      mockPlugin.app.fileManager.renameFile = jest.fn().mockResolvedValue(undefined);
+      mockPlugin.cacheManager.getTaskInfo.mockResolvedValue(projectTask);
+
+      const result = await taskService.updateProperty(projectTask, 'projects', []);
+
+      expect(mockPlugin.app.fileManager.renameFile).not.toHaveBeenCalled();
+      expect(result.path).toBe(projectTask.path);
+    });
+
+    it('should move a task to the watched project subfolder when bulk updates add projects', async () => {
+      const projectTask = TaskFactory.createTask({
+        path: 'TaskNotes/Tasks/read-chapter.md',
+        projects: []
+      });
+      const originalFile = new TFile(projectTask.path);
+      const projectFile = new TFile('Projects/Course Alpha/Overview.md');
+
+      mockPlugin.settings.enableProjectSubfolderTaskRouting = true;
+      mockPlugin.settings.projectAutosuggest = {
+        enableFuzzy: false,
+        rows: [],
+        includeFolders: ['Projects']
+      };
+      mockPlugin.app.metadataCache.getFirstLinkpathDest = jest.fn().mockReturnValue(projectFile);
+      mockPlugin.app.vault.getAbstractFileByPath.mockImplementation((path: string) =>
+        path === projectTask.path ? originalFile : null
+      );
+      mockPlugin.app.fileManager.renameFile = jest.fn().mockResolvedValue(undefined);
+
+      const result = await taskService.updateTask(projectTask, {
+        projects: ['[[Projects/Course Alpha/Overview]]']
+      });
+
+      expect(mockPlugin.app.fileManager.renameFile).toHaveBeenCalledWith(
+        originalFile,
+        'Projects/Course Alpha/read-chapter.md'
+      );
+      expect(mockPlugin.cacheManager.clearCacheEntry).toHaveBeenCalledWith(projectTask.path);
+      expect(result.path).toBe('Projects/Course Alpha/read-chapter.md');
     });
   });
 

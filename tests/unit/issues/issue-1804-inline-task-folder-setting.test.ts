@@ -1,5 +1,8 @@
 import { renderGeneralTab } from "../../../src/settings/tabs/generalTab";
-import { configureTextSetting } from "../../../src/settings/components/settingHelpers";
+import {
+	configureTextSetting,
+	configureToggleSetting,
+} from "../../../src/settings/components/settingHelpers";
 import type TaskNotesPlugin from "../../../src/main";
 
 jest.mock("../../../src/settings/components/settingHelpers", () => ({
@@ -32,6 +35,7 @@ function createPlugin(enableInstantTaskConvert: boolean): TaskNotesPlugin {
 	return {
 		settings: {
 			enableInstantTaskConvert,
+			enableProjectSubfolderTaskRouting: false,
 			inlineTaskConvertFolder: "{{currentNotePath}}",
 			tasksFolder: "TaskNotes/Tasks",
 			moveArchivedTasks: false,
@@ -86,5 +90,19 @@ describe("issue #1804 inline task folder setting", () => {
 		);
 
 		expect(inlineFolderCalls).toHaveLength(1);
+	});
+
+	it("shows the project subfolder routing toggle in task storage", () => {
+		const container = document.createElement("div");
+
+		renderGeneralTab(container, createPlugin(true), jest.fn());
+
+		const routingToggleCall = (configureToggleSetting as jest.Mock).mock.calls.find(
+			([, options]) =>
+				options.name === "settings.general.taskStorage.projectSubfolderRouting.name"
+		);
+
+		expect(routingToggleCall).toBeDefined();
+		expect(routingToggleCall[1].getValue()).toBe(false);
 	});
 });

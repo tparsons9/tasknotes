@@ -26,6 +26,7 @@ import {
 } from "../utils/helpers";
 import { formatDependencyLink, resolveDependencyEntry } from "../utils/dependencyUtils";
 import { generateLink, getProjectDisplayName, parseLinkToPath } from "../utils/linkUtils";
+import { resolveProjectTaskFolder } from "../utils/projectTaskFolderRouting";
 import {
 	formatDateForStorage,
 	getCurrentDateString,
@@ -200,6 +201,83 @@ export class TaskService {
 
 	private getCompletionDateForTask(task: TaskInfo): string {
 		return task.occurrence_date || getCurrentDateString();
+	}
+
+	private getActiveFolderPath(): string | undefined {
+		const activeFile = this.plugin.app.workspace.getActiveFile?.();
+		if (activeFile?.parent?.path !== undefined) {
+			return activeFile.parent.path;
+		}
+		if (typeof activeFile?.path === "string") {
+			return activeFile.path.split("/").slice(0, -1).join("/");
+		}
+		return undefined;
+	}
+
+	private async moveTaskToProjectSubfolderIfNeeded(
+		file: TFile,
+		originalTask: TaskInfo,
+		updatedTask: TaskInfo,
+		property: keyof TaskInfo
+	): Promise<TFile> {
+		if (property !== "projects" || !this.plugin.settings.enableProjectSubfolderTaskRouting) {
+			return file;
+		}
+
+		const destinationFolder = resolveProjectTaskFolder({
+			app: this.plugin.app,
+			projects: updatedTask.projects,
+			includeFolders: this.plugin.settings.projectAutosuggest?.includeFolders,
+			activeFolder: this.getActiveFolderPath(),
+			sourcePath: updatedTask.path,
+		});
+		if (!destinationFolder) {
+			return file;
+		}
+
+		const currentFolder = file.parent?.path ?? originalTask.path.split("/").slice(0, -1).join("/");
+		if (currentFolder === destinationFolder) {
+			return file;
+		}
+
+		const newPath = normalizePath(`${destinationFolder}/${file.name}`);
+		if (newPath === originalTask.path) {
+			return file;
+		}
+
+		try {
+			await ensureFolderExists(this.plugin.app.vault, destinationFolder);
+
+			const existingFile = this.plugin.app.vault.getAbstractFileByPath(newPath);
+			if (existingFile) {
+				throw new Error(
+					`A file named "${file.name}" already exists in "${destinationFolder}".`
+				);
+			}
+
+			await this.plugin.app.fileManager.renameFile(file, newPath);
+			updatedTask.path = newPath;
+			this.plugin.cacheManager.clearCacheEntry(originalTask.path);
+			this.plugin.expandedProjectsService?.renamePath?.(originalTask.path, newPath);
+			this.plugin.projectSubtasksService?.invalidateIndex?.();
+
+			const movedFile = this.plugin.app.vault.getAbstractFileByPath(newPath);
+			return movedFile instanceof TFile ? movedFile : file;
+		} catch (moveError) {
+			const errorMessage =
+				moveError instanceof Error ? moveError.message : String(moveError);
+			tasknotesLogger.error("Error moving task to project subfolder:", {
+				category: "persistence",
+				operation: "move-task-project-subfolder",
+				details: { taskPath: originalTask.path, destinationFolder },
+				error: errorMessage,
+			});
+			publishUserNotice(
+				this.plugin.emitter,
+				`Could not move task to project folder: ${errorMessage}`
+			);
+			return file;
+		}
 	}
 
 	/**
@@ -466,9 +544,16 @@ export class TaskService {
 				);
 			});
 
+			const sideEffectFile = await this.moveTaskToProjectSubfolderIfNeeded(
+				file,
+				freshTask,
+				updatePlan.updatedTask,
+				property
+			);
+
 			// Step 3: Run post-write side effects (cache, events, webhooks, calendar, auto-archive)
 			await this.applyPropertyChangeSideEffects(
-				file,
+				sideEffectFile,
 				freshTask,
 				updatePlan.updatedTask,
 				property,

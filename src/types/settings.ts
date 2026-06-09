@@ -152,6 +152,7 @@ export interface TaskNotesSettings {
 	doubleClickAction: "edit" | "openNote" | "none";
 	// Inline task conversion settings
 	inlineTaskConvertFolder: string; // Folder for inline task conversion, supports {{currentNotePath}} and {{currentNoteTitle}}
+	enableProjectSubfolderTaskRouting: boolean; // Route inline/project-assigned tasks to matching watched project subfolders
 	// Performance settings
 	disableNoteIndexing: boolean;
 	/** Optional debounce in milliseconds for inline file suggestions (0 = disabled) */
