@@ -416,6 +416,7 @@ export class TaskCreationService {
 			projects: taskData.projects,
 			includeFolders: runtime.settings.projectAutosuggest?.includeFolders,
 			activeFolder: this.getActiveFolderPath(),
+			sourcePath: runtime.app.workspace.getActiveFile()?.path,
 		});
 	}
 

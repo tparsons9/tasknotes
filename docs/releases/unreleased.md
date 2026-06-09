@@ -48,3 +48,5 @@ When a change has user-facing documentation, include a canonical tasknotes.dev l
 - Fixed Google Calendar event creation so manual "Link on save" actions and repeated create clicks do not create duplicate events. The create task modal now closes without waiting for the Google Calendar event request to finish, and existing settings with automatic event creation disabled continue to show manual creation mode.
 - Fixed manual Google Calendar linking so stale linked events are recreated on their selected calendar and edit-modal linking stops when unsaved task edits fail to save.
 - Fixed project subfolder routing so project changes saved from the task edit modal can move tasks to matching watched project subfolders.
+- Fixed project subfolder routing for task creation so project links that depend on the originating note path resolve to the correct project folder.
+  - Thanks to @tparsons9 for PR #1.
