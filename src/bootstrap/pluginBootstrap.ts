@@ -282,6 +282,7 @@ export async function initializeAfterLayoutReady(plugin: TaskNotesPlugin): Promi
 		if (plugin.settings.autoCreateDefaultBasesFiles) {
 			await plugin.ensureBasesViewFiles();
 		}
+		await plugin.ensureStarterNote();
 
 		plugin.injectCustomStyles();
 		registerActiveViews(plugin);
@@ -465,7 +466,7 @@ export function initializeServicesLazily(plugin: TaskNotesPlugin): void {
 					(data: { path?: string; updatedTask?: TaskInfo }) => {
 						plugin.app.workspace.iterateRootLeaves((leaf) => {
 							if (leaf.view && leaf.view.getViewType() === "markdown") {
-								const editor = (leaf.view as MarkdownView).editor;
+									const editor = (leaf.view as MarkdownView).editor;
 								const cm = getCodeMirrorEditor(editor);
 								if (cm) {
 									const taskPath = data?.path || data?.updatedTask?.path;
@@ -480,7 +481,7 @@ export function initializeServicesLazily(plugin: TaskNotesPlugin): void {
 					plugin.app.workspace.on("active-leaf-change", (leaf) => {
 						window.setTimeout(() => {
 							if (leaf && leaf.view && leaf.view.getViewType() === "markdown") {
-								const editor = (leaf.view as MarkdownView).editor;
+									const editor = (leaf.view as MarkdownView).editor;
 								const cm = getCodeMirrorEditor(editor);
 								if (cm) {
 									dispatchTaskUpdate(cm as EditorView);

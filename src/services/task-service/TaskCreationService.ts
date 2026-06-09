@@ -33,8 +33,10 @@ interface TemplateApplicationResult {
 	body: string;
 }
 
+type Nullable<T> = T | null;
+
 interface TaskCreationWorkspace {
-	getActiveFile(): TFile | null;
+	getActiveFile(): Nullable<TFile>;
 }
 
 interface TaskCreationVault extends Vault {
@@ -103,6 +105,12 @@ export interface TaskCreationServiceDependencies {
 	sanitizeTitleForStorage(input: string): string;
 }
 
+export interface TaskCreationOptions {
+	applyDefaults?: boolean;
+	applyTemplate?: boolean;
+	skipCalendarSync?: boolean;
+}
+
 export class TaskCreationService {
 	constructor(private deps: TaskCreationServiceDependencies) {}
 
@@ -112,9 +120,9 @@ export class TaskCreationService {
 
 	async createTask(
 		taskData: TaskCreationData,
-		options: { applyDefaults?: boolean; skipCalendarSync?: boolean } = {}
+		options: TaskCreationOptions = {}
 	): Promise<{ file: TFile; taskInfo: TaskInfo }> {
-		const { applyDefaults = true, skipCalendarSync = false } = options;
+		const { applyDefaults = true, applyTemplate = true, skipCalendarSync = false } = options;
 		const { runtime } = this.deps;
 
 		try {
@@ -270,7 +278,9 @@ export class TaskCreationService {
 				frontmatter.tags = tagsArray;
 			}
 
-			const templateResult = await this.deps.applyTemplate(taskData);
+			const templateResult = applyTemplate
+				? await this.deps.applyTemplate(taskData)
+				: { frontmatter: {}, body: "" };
 			const normalizedBody = templateResult.body
 				? templateResult.body.replace(/\r\n/g, "\n").trimEnd()
 				: taskData.details

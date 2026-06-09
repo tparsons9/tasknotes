@@ -19,6 +19,7 @@ import {
 import { AutoArchiveService } from "./AutoArchiveService";
 import { TFile, normalizePath } from "obsidian";
 import { TemplateData, processTemplate } from "../utils/templateProcessor";
+import type { ProcessedTemplate } from "../utils/templateProcessor";
 import {
 	ensureFolderExists,
 	splitFrontmatterAndBody,
@@ -83,6 +84,12 @@ import { resolveTaskPropertyFrontmatterField } from "./task-service/taskProperty
 import { createTaskNotesLogger } from "../utils/tasknotesLogger";
 
 const tasknotesLogger = createTaskNotesLogger({ tag: "Services/TaskService" });
+
+interface OccurrenceTemplateResolution {
+	configured: boolean;
+	templateTask?: Partial<TaskInfo>;
+	customFrontmatter?: Record<string, unknown>;
+}
 
 export class TaskService {
 	private webhookNotifier?: IWebhookNotifier;
@@ -348,11 +355,12 @@ export class TaskService {
 	 * @param taskData - The task data to create
 	 * @param options - Optional settings for task creation
 	 * @param options.applyDefaults - Whether to apply task creation defaults. Set to false for imports (e.g., ICS events) that shouldn't have defaults applied. Defaults to true.
+	 * @param options.applyTemplate - Whether to apply task templates. Defaults to true.
 	 * @param options.skipCalendarSync - Whether to skip automatic Google Calendar sync for this create operation.
 	 */
 	async createTask(
 		taskData: TaskCreationData,
-		options: { applyDefaults?: boolean; skipCalendarSync?: boolean } = {}
+		options: { applyDefaults?: boolean; applyTemplate?: boolean; skipCalendarSync?: boolean } = {}
 	): Promise<{ file: TFile; taskInfo: TaskInfo }> {
 		return this.taskCreationService.createTask(taskData, options);
 	}
@@ -435,6 +443,172 @@ export class TaskService {
 				frontmatter: {},
 				body: taskData.details?.trim() || "",
 			};
+		}
+	}
+
+	private getOccurrenceTemplateReference(parentTask: TaskInfo): string | null {
+		const parentTemplate = parentTask.occurrence_template?.trim();
+		if (parentTemplate) {
+			return parentTemplate;
+		}
+
+		const defaults = this.plugin.settings.taskCreationDefaults;
+		if (
+			defaults.useOccurrenceBodyTemplate &&
+			defaults.occurrenceBodyTemplate?.trim()
+		) {
+			return defaults.occurrenceBodyTemplate.trim();
+		}
+
+		return null;
+	}
+
+	private resolveTemplateFile(templateReference: string, sourcePath: string) {
+		const linkPath = parseLinkToPath(templateReference).trim();
+		if (!linkPath) {
+			return null;
+		}
+
+		const resolvedFile =
+			this.plugin.app.metadataCache.getFirstLinkpathDest?.(linkPath, sourcePath) ??
+			this.plugin.app.metadataCache.getFirstLinkpathDest?.(
+				linkPath.replace(/\.md$/i, ""),
+				sourcePath
+			) ??
+			this.plugin.app.metadataCache.getFirstLinkpathDest?.(linkPath, "");
+		if (resolvedFile instanceof TFile) {
+			return resolvedFile;
+		}
+
+		const normalizedPath = normalizePath(linkPath);
+		const candidatePaths = /\.md$/i.test(normalizedPath)
+			? [normalizedPath]
+			: [`${normalizedPath}.md`, normalizedPath];
+
+		for (const candidatePath of candidatePaths) {
+			const file = this.plugin.app.vault.getAbstractFileByPath(candidatePath);
+			if (file instanceof TFile) {
+				return file;
+			}
+		}
+
+		return null;
+	}
+
+	private buildOccurrenceTemplateData(
+		occurrenceTask: TaskInfo,
+		parentTask: TaskInfo
+	): TemplateData {
+		return {
+			title: occurrenceTask.title || parentTask.title || "",
+			priority: occurrenceTask.priority || parentTask.priority || "",
+			status: occurrenceTask.status || "",
+			contexts: Array.isArray(occurrenceTask.contexts) ? occurrenceTask.contexts : [],
+			tags: Array.isArray(occurrenceTask.tags) ? occurrenceTask.tags : [],
+			timeEstimate: occurrenceTask.timeEstimate || 0,
+			dueDate: occurrenceTask.due || "",
+			scheduledDate: occurrenceTask.scheduled || "",
+			details: occurrenceTask.details || "",
+			parentNote: this.buildOccurrenceParentReference(parentTask),
+		};
+	}
+
+	private extractTemplateCustomFrontmatter(
+		frontmatter: Record<string, unknown>
+	): Record<string, unknown> | undefined {
+		const userFieldKeys = new Set(
+			this.plugin.fieldMapper.getUserFields().map((field) => field.key)
+		);
+		const customFrontmatter: Record<string, unknown> = {};
+
+		for (const [key, value] of Object.entries(frontmatter)) {
+			if (
+				key === "tags" ||
+				userFieldKeys.has(key) ||
+				this.plugin.fieldMapper.lookupMappingKey(key)
+			) {
+				continue;
+			}
+			customFrontmatter[key] = value;
+		}
+
+		return Object.keys(customFrontmatter).length > 0 ? customFrontmatter : undefined;
+	}
+
+	private buildOccurrenceTemplateTask(
+		processedTemplate: ProcessedTemplate
+	): {
+		templateTask: Partial<TaskInfo>;
+		customFrontmatter?: Record<string, unknown>;
+	} {
+		const mappedFrontmatter = this.plugin.fieldMapper.mapFromFrontmatter(
+			processedTemplate.frontmatter,
+			"",
+			false
+		);
+		const body = processedTemplate.body.replace(/\r\n/g, "\n").trimEnd();
+		const templateTask: Partial<TaskInfo> = { ...mappedFrontmatter };
+
+		if (body.trim().length > 0) {
+			templateTask.details = body;
+		}
+
+		return {
+			templateTask,
+			customFrontmatter: this.extractTemplateCustomFrontmatter(
+				processedTemplate.frontmatter
+			),
+		};
+	}
+
+	private async resolveOccurrenceTemplate(
+		parentTask: TaskInfo,
+		baseOccurrenceTask: TaskInfo
+	): Promise<OccurrenceTemplateResolution> {
+		const templateReference = this.getOccurrenceTemplateReference(parentTask);
+		if (!templateReference) {
+			return { configured: false };
+		}
+
+		const templateFile = this.resolveTemplateFile(templateReference, parentTask.path);
+		if (!templateFile) {
+			tasknotesLogger.warn(`Occurrence note template not found: ${templateReference}`, {
+				category: "persistence",
+				operation: "occurrence-template-not-found",
+			});
+			publishUserNotice(
+				this.plugin.emitter,
+				this.translate("services.task.notices.occurrenceTemplateNotFound", {
+					path: templateReference,
+				})
+			);
+			return { configured: true };
+		}
+
+		try {
+			const templateContent = await this.plugin.app.vault.read(templateFile);
+			const processedTemplate = processTemplate(
+				templateContent,
+				this.buildOccurrenceTemplateData(baseOccurrenceTask, parentTask)
+			);
+
+			return {
+				configured: true,
+				...this.buildOccurrenceTemplateTask(processedTemplate),
+			};
+		} catch (error) {
+			tasknotesLogger.error("Error reading occurrence note template:", {
+				category: "persistence",
+				operation: "reading-occurrence-template",
+				error,
+			});
+			publishUserNotice(
+				this.plugin.emitter,
+				this.translate("services.task.notices.occurrenceTemplateReadError", {
+					template: templateReference,
+				})
+			);
+			return { configured: true };
 		}
 	}
 
@@ -638,7 +812,7 @@ export class TaskService {
 		}
 
 		const existingOccurrences = await this.plugin.cacheManager.getAllTasks();
-		const plan = buildMaterializeOccurrencePlan({
+		const basePlanInput = {
 			parentTask: freshParent,
 			targetDate,
 			currentTimestamp: getCurrentTimestamp(),
@@ -647,17 +821,34 @@ export class TaskService {
 			defaultStatus: this.plugin.settings.defaultTaskStatus,
 			defaultPriority: this.plugin.settings.defaultTaskPriority,
 			overrides,
-		});
+		};
+		const basePlan = buildMaterializeOccurrencePlan(basePlanInput);
 
-		if (!plan.created && plan.existingOccurrence) {
-			return plan.existingOccurrence;
+		if (!basePlan.created && basePlan.existingOccurrence) {
+			return basePlan.existingOccurrence;
 		}
+
+		const occurrenceTemplate = await this.resolveOccurrenceTemplate(
+			freshParent,
+			basePlan.occurrenceTask as TaskInfo
+		);
+		const plan =
+			occurrenceTemplate.templateTask || occurrenceTemplate.customFrontmatter
+				? buildMaterializeOccurrencePlan({
+						...basePlanInput,
+						templateTask: occurrenceTemplate.templateTask,
+					})
+				: basePlan;
 
 		const taskData: TaskCreationData = {
 			...(plan.occurrenceTask as Partial<TaskInfo>),
 			creationContext: "api",
+			customFrontmatter: occurrenceTemplate.customFrontmatter,
 		};
-		const { taskInfo } = await this.createTask(taskData, { applyDefaults: false });
+		const { taskInfo } = await this.createTask(taskData, {
+			applyDefaults: false,
+			applyTemplate: !occurrenceTemplate.configured,
+		});
 		return taskInfo;
 	}
 
