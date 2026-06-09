@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - '*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag/version to build, e.g. 4.11.0-tp.0'
+        required: true
+        type: string
 
 env:
   PLUGIN_NAME: tasknotes
@@ -21,6 +27,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref }}
 
       - name: Use Node.js
         uses: actions/setup-node@v4
@@ -29,8 +36,12 @@ jobs:
 
       - name: Update manifest version from tag
         run: |
-          # Extract version from tag (removes 'v' prefix if present)
-          VERSION="${GITHUB_REF#refs/tags/}"
+          # Extract version from tag (or use the manual workflow input).
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
           VERSION="${VERSION#v}"
           echo "Setting version to: $VERSION"
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
@@ -79,10 +90,11 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.VERSION }}
           name: ${{ env.VERSION }}
           body_path: ${{ env.RELEASE_NOTES_PATH }}
           files: |
             main.js
             manifest.json
             styles.css
-          draft: true
+          draft: false
