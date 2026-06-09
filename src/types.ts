@@ -481,6 +481,7 @@ export interface TaskInfo {
 	dateCreated?: string; // Creation date (ISO timestamp)
 	dateModified?: string; // Last modification date (ISO timestamp)
 	icsEventId?: string[]; // Links to ICS calendar event IDs
+	googleCalendarId?: string; // Google Calendar ID containing the linked task event
 	googleCalendarEventId?: string; // Google Calendar event ID for sync
 	googleCalendarExceptionEventId?: string; // Detached Google Calendar event ID for a moved recurring occurrence
 	googleCalendarExceptionOriginalScheduled?: string; // Original recurring date replaced by the current moved occurrence
@@ -720,6 +721,7 @@ export interface FieldMapping {
 	pomodoros: string; // For daily note pomodoro tracking
 	icsEventId: string; // For linking to ICS calendar events (stored as array in frontmatter)
 	icsEventTag: string; // Tag used for ICS event-related content
+	googleCalendarId: string; // Google Calendar ID containing the linked task event
 	googleCalendarEventId: string; // For Google Calendar sync (stores event ID)
 	googleCalendarExceptionEventId: string; // Detached Google Calendar event ID for moved recurring occurrences
 	googleCalendarExceptionOriginalScheduled: string; // Original recurring date replaced by the current moved occurrence

@@ -61,6 +61,13 @@ type CalendarEventPayload = {
 	recurrence?: string[];
 };
 
+export type TaskCalendarEventPayload = CalendarEventPayload;
+
+export interface CreateLinkedGoogleCalendarEventOptions {
+	calendarId?: string;
+	eventData?: CalendarEventPayload;
+}
+
 function getErrorStatus(error: unknown): number | undefined {
 	if (error === null || typeof error !== "object") {
 		return undefined;
@@ -389,6 +396,15 @@ export class TaskCalendarSyncService {
 			default:
 				return false;
 		}
+	}
+
+	private shouldAutomaticallyCreateEvents(): boolean {
+		const settings = this.plugin.settings.googleCalendarExport;
+		return settings.eventCreationMode !== "manual" && settings.syncOnTaskCreate;
+	}
+
+	private getTaskCalendarId(task: TaskInfo): string | undefined {
+		return task.googleCalendarId || this.plugin.settings.googleCalendarExport.targetCalendarId;
 	}
 
 	private async getDeletionQueue(): Promise<PendingGoogleCalendarDeletion[]> {
@@ -970,7 +986,7 @@ export class TaskCalendarSyncService {
 
 				if (this.isTaskCalendarEligible(task)) {
 					this.profileIncrement("handleExternalTaskFileUpdated.changedEligibleTask");
-					if (settings.syncOnTaskCreate) {
+					if (this.shouldAutomaticallyCreateEvents()) {
 						await this.syncTaskToCalendar(task);
 					} else {
 						await this.recordCalendarSyncFingerprint(task);
@@ -992,13 +1008,6 @@ export class TaskCalendarSyncService {
 				return;
 			}
 			this.profileGauge("recoverDeletedTaskEventsFromIndex.enabled", 1);
-
-			const targetCalendarId = this.plugin.settings.googleCalendarExport.targetCalendarId;
-			if (!targetCalendarId) {
-				this.profileGauge("recoverDeletedTaskEventsFromIndex.hasTargetCalendar", 0);
-				return;
-			}
-			this.profileGauge("recoverDeletedTaskEventsFromIndex.hasTargetCalendar", 1);
 
 			const tasks = await this.plugin.cacheManager.getAllTasks();
 			const index = await this.getEventIndex();
@@ -1025,6 +1034,10 @@ export class TaskCalendarSyncService {
 			for (const task of tasks) {
 				const eventId = this.getTaskEventId(task);
 				if (!eventId) {
+					continue;
+				}
+				const targetCalendarId = this.getTaskCalendarId(task);
+				if (!targetCalendarId) {
 					continue;
 				}
 
@@ -1169,6 +1182,11 @@ export class TaskCalendarSyncService {
 					} else {
 						results.dropped++;
 					}
+					continue;
+				}
+
+				if (!this.hasTaskCalendarLink(task) && !this.shouldAutomaticallyCreateEvents()) {
+					results.dropped++;
 					continue;
 				}
 
@@ -1511,8 +1529,11 @@ export class TaskCalendarSyncService {
 		}
 
 		const fieldName = this.plugin.fieldMapper.toUserField("googleCalendarEventId");
+		const calendarIdFieldName = this.plugin.fieldMapper.toUserField("googleCalendarId");
 		await this.writeGoogleCalendarFrontmatterFields(taskPath, file, {
 			[fieldName]: eventId,
+			[calendarIdFieldName]:
+				calendarId || this.plugin.settings.googleCalendarExport.targetCalendarId,
 		});
 		TaskCalendarSyncService.taskEventIdCache.set(
 			this.getTaskEventIdCacheKey(taskPath, calendarId),
@@ -1529,7 +1550,10 @@ export class TaskCalendarSyncService {
 	/**
 	 * Remove the Google Calendar event ID from the task's frontmatter
 	 */
-	private async removeTaskEventId(taskPath: string): Promise<void> {
+	private async removeTaskEventId(
+		taskPath: string,
+		options: { preserveCalendarId?: boolean } = {}
+	): Promise<void> {
 		const file = this.plugin.app.vault.getAbstractFileByPath(taskPath);
 		if (!(file instanceof TFile)) {
 			tasknotesLogger.warn(`Cannot remove event ID: file not found at ${taskPath}`, {
@@ -1542,9 +1566,14 @@ export class TaskCalendarSyncService {
 		}
 
 		const fieldName = this.plugin.fieldMapper.toUserField("googleCalendarEventId");
-		await this.writeGoogleCalendarFrontmatterFields(taskPath, file, {
+		const calendarIdFieldName = this.plugin.fieldMapper.toUserField("googleCalendarId");
+		const updates: Record<string, unknown> = {
 			[fieldName]: undefined,
-		});
+		};
+		if (!options.preserveCalendarId) {
+			updates[calendarIdFieldName] = undefined;
+		}
+		await this.writeGoogleCalendarFrontmatterFields(taskPath, file, updates);
 		TaskCalendarSyncService.clearTaskEventIdCache(taskPath);
 		await this.removeEventIndexForTask(taskPath);
 	}
@@ -2072,7 +2101,7 @@ export class TaskCalendarSyncService {
 	/**
 	 * Convert a task to a Google Calendar event payload
 	 */
-	private taskToCalendarEvent(
+	taskToCalendarEvent(
 		task: TaskInfo,
 		clearRecurrence?: boolean
 	): CalendarEventPayload | null {
@@ -2204,6 +2233,52 @@ export class TaskCalendarSyncService {
 		}
 
 		return event;
+	}
+
+	async createLinkedEventForTask(
+		task: TaskInfo,
+		options: CreateLinkedGoogleCalendarEventOptions = {}
+	): Promise<boolean> {
+		const calendarId =
+			options.calendarId || task.googleCalendarId || this.plugin.settings.googleCalendarExport.targetCalendarId;
+		if (!calendarId) {
+			return false;
+		}
+
+		const eventData = options.eventData || this.taskToCalendarEvent(task);
+		if (!eventData) {
+			return false;
+		}
+
+		if (!this.plugin.settings.googleCalendarExport.enabled) {
+			return false;
+		}
+
+		const isConnected = this.googleCalendarService.getAvailableCalendars().length > 0;
+		if (!isConnected) {
+			return false;
+		}
+
+		try {
+			await this.createCalendarEventForTask(task, eventData, calendarId);
+			await this.recordCalendarSyncFingerprint(task);
+			return true;
+		} catch (error: unknown) {
+			tasknotesLogger.error("[TaskCalendarSync] Failed to create linked event:", {
+				category: "provider",
+				operation: "create-linked-event",
+				details: { value: task.path },
+				error,
+			});
+			publishUserNotice(
+				this.plugin.emitter,
+				this.plugin.i18n.translate(
+					"settings.integrations.googleCalendarExport.notices.syncFailed",
+					{ message: getErrorMessage(error) }
+				)
+			);
+			return false;
+		}
 	}
 
 	private async createCalendarEventForTask(
@@ -2416,7 +2491,7 @@ export class TaskCalendarSyncService {
 	async syncTaskToCalendar(
 		task: TaskInfo,
 		previous?: TaskInfo,
-		options: { queueOnFailure?: boolean } = {}
+		options: { queueOnFailure?: boolean; allowCreate?: boolean } = {}
 	): Promise<boolean> {
 		const queueOnFailure = options.queueOnFailure ?? true;
 
@@ -2424,9 +2499,15 @@ export class TaskCalendarSyncService {
 			return true;
 		}
 
-		const settings = this.plugin.settings.googleCalendarExport;
 		const existingEventId = this.getTaskEventId(task);
-		const targetCalendarId = settings.targetCalendarId;
+		const targetCalendarId = this.getTaskCalendarId(task);
+		const allowCreate =
+			options.allowCreate ?? this.shouldAutomaticallyCreateEvents();
+
+		if (!existingEventId && !allowCreate) {
+			await this.recordCalendarSyncFingerprint(task);
+			return true;
+		}
 
 		try {
 			if (!this.isEnabled()) {
@@ -2524,11 +2605,14 @@ export class TaskCalendarSyncService {
 			// Check if it's a 404 error (event was deleted externally)
 			if (getErrorStatus(error) === 404 && existingEventId) {
 				// Clear the stale link and retry as create
-				await this.removeTaskEventId(task.path);
+				await this.removeTaskEventId(task.path, { preserveCalendarId: true });
 				// Retry without the link - refetch task to get updated version
 				const updatedTask = await this.plugin.cacheManager.getTaskInfo(task.path);
 				if (updatedTask) {
-					return this.syncTaskToCalendar(updatedTask, previous, options);
+					return this.syncTaskToCalendar(updatedTask, previous, {
+						...options,
+						allowCreate: true,
+					});
 				}
 			}
 
@@ -2713,6 +2797,9 @@ export class TaskCalendarSyncService {
 		const settings = this.plugin.settings.googleCalendarExport;
 		let existingEventId = this.getTaskEventId(task);
 		if (!existingEventId) {
+			if (!this.shouldAutomaticallyCreateEvents()) {
+				return false;
+			}
 			const synced = await this.syncTaskToCalendar(task);
 			if (!synced) {
 				return false;
@@ -2734,9 +2821,13 @@ export class TaskCalendarSyncService {
 			const description = settings.includeDescription
 				? this.buildEventDescription(task)
 				: undefined;
+			const calendarId = this.getTaskCalendarId(task) || settings.targetCalendarId;
+			if (!calendarId) {
+				return false;
+			}
 
 			await this.withGoogleRateLimit(() =>
-				this.googleCalendarService.updateEvent(settings.targetCalendarId, existingEventId, {
+				this.googleCalendarService.updateEvent(calendarId, existingEventId, {
 					summary: this.getCalendarEventTitle(task),
 					description,
 				})
@@ -2768,6 +2859,8 @@ export class TaskCalendarSyncService {
 		const settings = this.plugin.settings.googleCalendarExport;
 		const eventId = this.getTaskEventId(task);
 		if (!eventId) return;
+		const calendarId = this.getTaskCalendarId(task);
+		if (!calendarId) return;
 
 		try {
 			const recurrenceData = convertToGoogleRecurrence(task.recurrence, {
@@ -2782,13 +2875,13 @@ export class TaskCalendarSyncService {
 					: undefined;
 
 				await this.withGoogleRateLimit(() =>
-					this.googleCalendarService.updateEvent(settings.targetCalendarId, eventId, {
+					this.googleCalendarService.updateEvent(calendarId, eventId, {
 						summary: this.getCalendarEventTitle(task),
 						description,
 						recurrence: recurrenceData.recurrence,
 					})
 				);
-				await this.syncRecurringExceptionEvent(task, settings.targetCalendarId);
+				await this.syncRecurringExceptionEvent(task, calendarId);
 			}
 		} catch (error: unknown) {
 			if (getErrorStatus(error) === 404) {
@@ -2815,14 +2908,13 @@ export class TaskCalendarSyncService {
 			return true;
 		}
 
-		const settings = this.plugin.settings.googleCalendarExport;
 		const existingEventId = this.getTaskEventId(task);
 		const exceptionEventId = this.getTaskExceptionEventId(task);
 		if (!existingEventId && !this.hasStoredRecurringExceptionMetadata(task)) {
 			return true;
 		}
 
-		const targetCalendarId = settings.targetCalendarId;
+		const targetCalendarId = this.getTaskCalendarId(task);
 		if (!targetCalendarId) {
 			tasknotesLogger.warn(
 				"[TaskCalendarSync] Cannot delete task event without target calendar:",
@@ -2862,13 +2954,23 @@ export class TaskCalendarSyncService {
 	async deleteTaskFromCalendarByPath(
 		taskPath: string,
 		eventId?: string,
-		...additionalEventIds: Array<string | undefined>
+		...additionalEventIdsOrOptions: Array<
+			string | undefined | { calendarId?: string | undefined }
+		>
 	): Promise<boolean> {
 		if (!this.plugin.settings.googleCalendarExport.syncOnTaskDelete) {
 			return true;
 		}
 
 		const settings = this.plugin.settings.googleCalendarExport;
+		const options = additionalEventIdsOrOptions.find(
+			(item): item is { calendarId?: string | undefined } =>
+				typeof item === "object" && item !== null
+		);
+		const additionalEventIds = additionalEventIdsOrOptions.filter(
+			(item): item is string | undefined =>
+				typeof item === "string" || typeof item === "undefined"
+		);
 		const eventIds = [eventId, ...additionalEventIds].filter(
 			(id): id is string => typeof id === "string" && id.length > 0
 		);
@@ -2877,7 +2979,7 @@ export class TaskCalendarSyncService {
 			return true;
 		}
 
-		const targetCalendarId = settings.targetCalendarId;
+		const targetCalendarId = options?.calendarId || settings.targetCalendarId;
 		if (!targetCalendarId) {
 			tasknotesLogger.warn(
 				"[TaskCalendarSync] Cannot delete task events without target calendar:",
@@ -2980,7 +3082,6 @@ export class TaskCalendarSyncService {
 	 * Iterates over all tasks and removes the googleCalendarEventId from frontmatter.
 	 */
 	async unlinkAllTasks(deleteEvents = false): Promise<void> {
-		const settings = this.plugin.settings.googleCalendarExport;
 		const tasks = await this.plugin.cacheManager.getAllTasks();
 		let unlinkedCount = 0;
 
@@ -2990,7 +3091,7 @@ export class TaskCalendarSyncService {
 			}
 
 			if (deleteEvents) {
-				const targetCalendarId = settings.targetCalendarId;
+				const targetCalendarId = this.getTaskCalendarId(task);
 				if (!targetCalendarId) {
 					tasknotesLogger.warn(
 						`[TaskCalendarSync] Cannot delete event without target calendar for ${task.path}`,

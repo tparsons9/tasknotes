@@ -21,8 +21,11 @@ describe("TaskCalendarSyncService", () => {
         mockPlugin = {
             settings: {
                 googleCalendarExport: {
+                    eventCreationMode: "automatic",
+                    syncOnTaskCreate: true,
                     syncOnTaskUpdate: true,
                     syncOnTaskComplete: true,
+                    syncOnTaskDelete: true,
                     enabled: true,
                     targetCalendarId: "test-calendar",
                     includeObsidianLink: true,
@@ -190,6 +193,140 @@ describe("TaskCalendarSyncService", () => {
                 summary: "✓ Task Title",
                 description: undefined
             }
+        );
+    });
+
+    it("should not create an event for eligible unlinked tasks when event creation is manual", async () => {
+        mockPlugin.settings.googleCalendarExport.eventCreationMode = "manual";
+        const task: TaskInfo = {
+            path: "test/path.md",
+            title: "Manual task",
+            scheduled: "2026-04-29"
+        };
+
+        mockPlugin.cacheManager.getTaskInfo.mockResolvedValue(task);
+        syncService.syncTaskToCalendar = jest.fn().mockResolvedValue(true);
+
+        await syncService.handleExternalTaskFileUpdated(task.path, task);
+
+        expect(syncService.syncTaskToCalendar).not.toHaveBeenCalled();
+    });
+
+    it("should not create an event from direct sync for eligible unlinked tasks in manual mode", async () => {
+        mockPlugin.settings.googleCalendarExport.eventCreationMode = "manual";
+        const task: TaskInfo = {
+            path: "test/path.md",
+            title: "Manual direct sync",
+            scheduled: "2026-04-29"
+        };
+
+        await expect(syncService.syncTaskToCalendar(task)).resolves.toBe(true);
+
+        expect(mockGoogleCalendarService.createEvent).not.toHaveBeenCalled();
+        expect(mockGoogleCalendarService.updateEvent).not.toHaveBeenCalled();
+    });
+
+    it("should not create a new event when completing an unlinked task in manual mode", async () => {
+        mockPlugin.settings.googleCalendarExport.eventCreationMode = "manual";
+        const task: TaskInfo = {
+            path: "test/path.md",
+            title: "Manual completion",
+            status: "done",
+            scheduled: "2026-04-29"
+        };
+
+        syncService.syncTaskToCalendar = jest.fn().mockResolvedValue(true);
+
+        await syncService.completeTaskInCalendar(task);
+
+        expect(syncService.syncTaskToCalendar).not.toHaveBeenCalled();
+        expect(mockGoogleCalendarService.createEvent).not.toHaveBeenCalled();
+        expect(mockGoogleCalendarService.updateEvent).not.toHaveBeenCalled();
+    });
+
+    it("should create an explicit linked event in the selected calendar", async () => {
+        const task: TaskInfo = {
+            path: "test/path.md",
+            title: "Manual link",
+            scheduled: "2026-04-29"
+        };
+        const eventData = {
+            summary: "Manual link",
+            start: { date: "2026-04-29" },
+            end: { date: "2026-04-30" }
+        };
+
+        syncService.createCalendarEventForTask = jest.fn().mockResolvedValue("event-123");
+
+        await expect(
+            syncService.createLinkedEventForTask(task, {
+                calendarId: "calendar-2",
+                eventData
+            })
+        ).resolves.toBe(true);
+
+        expect(syncService.createCalendarEventForTask).toHaveBeenCalledWith(
+            task,
+            eventData,
+            "calendar-2"
+        );
+    });
+
+    it("should update linked tasks in their stored Google calendar", async () => {
+        syncService.withGoogleRateLimit = (fn: () => Promise<unknown>) => fn();
+        const task: TaskInfo = {
+            path: "test/path.md",
+            title: "Stored calendar",
+            scheduled: "2026-04-29",
+            googleCalendarId: "calendar-2",
+            googleCalendarEventId: "event-1"
+        };
+
+        await syncService.syncTaskToCalendar(task);
+
+        expect(mockGoogleCalendarService.updateEvent).toHaveBeenCalledWith(
+            "calendar-2",
+            "event-1",
+            expect.objectContaining({
+                summary: "Stored calendar"
+            })
+        );
+    });
+
+    it("should preserve a linked task calendar when retrying after a stale event 404", async () => {
+        syncService.withGoogleRateLimit = (fn: () => Promise<unknown>) => fn();
+        const task: TaskInfo = {
+            path: "test/path.md",
+            title: "Stored stale calendar",
+            scheduled: "2026-04-29",
+            googleCalendarId: "calendar-2",
+            googleCalendarEventId: "event-1"
+        };
+        const refetchedTask: TaskInfo = {
+            ...task,
+            googleCalendarEventId: undefined
+        };
+
+        mockGoogleCalendarService.updateEvent.mockRejectedValueOnce(
+            Object.assign(new Error("deleted"), { status: 404 })
+        );
+        const removeTaskEventId = jest
+            .spyOn(syncService, "removeTaskEventId")
+            .mockImplementation(async () => undefined);
+        mockPlugin.cacheManager.getTaskInfo.mockResolvedValueOnce(refetchedTask);
+        syncService.createCalendarEventForTask = jest.fn().mockResolvedValue("event-2");
+
+        await expect(syncService.syncTaskToCalendar(task)).resolves.toBe(true);
+
+        expect(removeTaskEventId).toHaveBeenCalledWith("test/path.md", {
+            preserveCalendarId: true
+        });
+        expect(syncService.createCalendarEventForTask).toHaveBeenCalledWith(
+            refetchedTask,
+            expect.objectContaining({
+                summary: "Stored stale calendar"
+            }),
+            "calendar-2"
         );
     });
 

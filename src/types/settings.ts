@@ -323,6 +323,7 @@ export interface ICSIntegrationSettings {
 export interface GoogleCalendarExportSettings {
 	enabled: boolean; // Master enable/disable for task export
 	targetCalendarId: string; // Which calendar to create events in
+	eventCreationMode: "automatic" | "manual"; // Whether eligible tasks auto-create events or require explicit linking
 	syncOnTaskCreate: boolean; // Auto-sync when task is created
 	syncOnTaskUpdate: boolean; // Auto-sync when task is updated
 	syncOnTaskComplete: boolean; // Update event when task is completed

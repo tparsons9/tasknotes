@@ -131,6 +131,38 @@ describe("settings persistence helpers", () => {
 		expect(shouldPersistMigratedSettings).toBe(true);
 	});
 
+	it("fills missing Google Calendar export nested defaults for existing settings", () => {
+		const { settings, shouldPersistMigratedSettings } = buildSettingsFromLoadedData({
+			fieldMapping: { ...DEFAULT_SETTINGS.fieldMapping },
+			calendarViewSettings: { ...DEFAULT_SETTINGS.calendarViewSettings },
+			commandFileMapping: { ...DEFAULT_SETTINGS.commandFileMapping },
+			googleCalendarExport: {
+				enabled: true,
+				targetCalendarId: "primary",
+			},
+		});
+
+		expect(settings.googleCalendarExport.enabled).toBe(true);
+		expect(settings.googleCalendarExport.targetCalendarId).toBe("primary");
+		expect(settings.googleCalendarExport.eventCreationMode).toBe("automatic");
+		expect(settings.googleCalendarExport.syncOnTaskCreate).toBe(true);
+		expect(shouldPersistMigratedSettings).toBe(false);
+	});
+
+	it("migrates legacy disabled Google Calendar auto-create settings to manual mode", () => {
+		const { settings, shouldPersistMigratedSettings } = buildSettingsFromLoadedData({
+			googleCalendarExport: {
+				enabled: true,
+				targetCalendarId: "primary",
+				syncOnTaskCreate: false,
+			},
+		});
+
+		expect(settings.googleCalendarExport.eventCreationMode).toBe("manual");
+		expect(settings.googleCalendarExport.syncOnTaskCreate).toBe(false);
+		expect(shouldPersistMigratedSettings).toBe(true);
+	});
+
 	it("merges only known settings keys into saved data while preserving other persisted data", () => {
 		const settings = {
 			...DEFAULT_SETTINGS,

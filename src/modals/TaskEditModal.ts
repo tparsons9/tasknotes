@@ -57,6 +57,41 @@ export class TaskEditModal extends TaskModal {
 		return true;
 	}
 
+	protected shouldShowGoogleCalendarLinkAction(): boolean {
+		return (
+			!!this.plugin.taskCalendarSyncService?.isEnabled() &&
+			!this.task.googleCalendarEventId &&
+			!this.task.archived
+		);
+	}
+
+	protected async getGoogleCalendarLinkTask(): Promise<TaskInfo | null> {
+		if (!this.validateForm()) {
+			new Notice(this.t("modals.taskEdit.notices.titleRequired"));
+			return null;
+		}
+
+		const changes = this.getChanges({ includeConversionWrite: true });
+		const hasBlockingChanges =
+			this.pendingBlockingUpdates.added.length > 0 ||
+			this.pendingBlockingUpdates.removed.length > 0;
+		const hasTaskChanges = Object.keys(changes).length > 0;
+		const hasSubtaskChanges = this.hasSubtaskChanges();
+
+		if (hasTaskChanges || hasBlockingChanges || hasSubtaskChanges) {
+			const saved = await this.handleSave();
+			if (!saved) {
+				return null;
+			}
+			const refreshed = await this.plugin.cacheManager.getTaskInfo(this.task.path);
+			if (refreshed) {
+				this.task = refreshed;
+			}
+		}
+
+		return this.task;
+	}
+
 	protected focusTitleInput(): void {
 		if (this.isMobileLikeEnvironment()) {
 			return;
@@ -152,8 +187,10 @@ export class TaskEditModal extends TaskModal {
 			if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
 				e.preventDefault();
 				void (async () => {
-					await this.handleSave();
-					this.forceClose();
+					const saved = await this.handleSave();
+					if (saved) {
+						this.forceClose();
+					}
 				})();
 			}
 		};
@@ -306,8 +343,10 @@ export class TaskEditModal extends TaskModal {
 			if (result === "save") {
 				// User wants to save - attempt save and close on success
 				try {
-					await this.handleSave();
-					this.forceClose();
+					const saved = await this.handleSave();
+					if (saved) {
+						this.forceClose();
+					}
 				} catch (error) {
 					// Save failed - stay open so user can fix issues
 					// handleSave() already shows a notice with the error
@@ -410,10 +449,10 @@ export class TaskEditModal extends TaskModal {
 		}
 	}
 
-	async handleSave(): Promise<void> {
+	async handleSave(): Promise<boolean> {
 		if (!this.validateForm()) {
 			new Notice(this.t("modals.taskEdit.notices.titleRequired"));
-			return;
+			return false;
 		}
 
 		try {
@@ -436,7 +475,7 @@ export class TaskEditModal extends TaskModal {
 			if (!hasTaskChanges && !hasBlockingChanges && !hasSubtaskChanges) {
 				new Notice(this.t("modals.taskEdit.notices.noChanges"));
 				this.close();
-				return;
+				return true;
 			}
 
 			let updatedTask = this.task;
@@ -494,6 +533,7 @@ export class TaskEditModal extends TaskModal {
 
 			this.pendingBlockingUpdates = { added: [], removed: [], raw: {} };
 			this.unresolvedBlockingEntries = [];
+			return true;
 		} catch (error) {
 			tasknotesLogger.error("Failed to update task:", {
 				category: "validation",
@@ -502,6 +542,7 @@ export class TaskEditModal extends TaskModal {
 			});
 			const message = error instanceof Error && error.message ? error.message : String(error);
 			new Notice(this.t("modals.taskEdit.notices.updateFailure", { message }));
+			return false;
 		}
 	}
 

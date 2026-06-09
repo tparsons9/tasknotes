@@ -16,6 +16,8 @@ Example:
 ```
 ## Fixed
 
+- Fixed manual Google Calendar event creation so eligible tasks without a manual link do not receive calendar events through update or reconciliation sync paths.
+
 - (#768) Fixed calendar view appearing empty in week and day views due to invalid time configuration values
   - Added time validation in settings UI with proper error messages and debouncing
   - Prevents "Cannot read properties of null (reading 'years')" error from FullCalendar
@@ -32,4 +34,11 @@ When a change has user-facing documentation, include a canonical tasknotes.dev l
 
 -->
 
+## Added
+
+- Added a manual Google Calendar event creation mode for task exports. You can choose whether TaskNotes creates events automatically or only when requested from a task modal.
+
 ## Fixed
+
+- Fixed Google Calendar event creation so manual "Link on save" actions and repeated create clicks do not create duplicate events. The create task modal now closes without waiting for the Google Calendar event request to finish, and existing settings with automatic event creation disabled continue to show manual creation mode.
+- Fixed manual Google Calendar linking so stale linked events are recreated on their selected calendar and edit-modal linking stops when unsaved task edits fail to save.

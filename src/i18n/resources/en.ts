@@ -1997,6 +1997,15 @@ export const en: TranslationTree = {
 				automaticSyncBehavior: {
 					header: "Automatic sync behavior",
 				},
+				eventCreationMode: {
+					name: "Event creation",
+					description:
+						"Choose whether TaskNotes creates Google Calendar events automatically for eligible tasks or only when requested from a task.",
+					options: {
+						automatic: "Automatically create events",
+						manual: "Create events manually",
+					},
+				},
 				syncOnCreate: {
 					name: "Sync on task create",
 					description: "Automatically create calendar event when a new task is created.",
@@ -2626,6 +2635,7 @@ export const en: TranslationTree = {
 				priority: "Set priority",
 				recurrence: "Set recurrence",
 				reminders: "Set reminders",
+				createGoogleCalendarEvent: "Create Google Calendar event",
 			},
 			buttons: {
 				openNote: "Open note",
@@ -2757,6 +2767,24 @@ export const en: TranslationTree = {
 				archived: "archived",
 				unarchived: "unarchived",
 			},
+		},
+		googleCalendarLink: {
+			title: "Create Google Calendar event",
+			calendar: "Calendar",
+			eventTitle: "Event title",
+			date: "Date",
+			allDay: "All-day event",
+			startTime: "Start time",
+			duration: "Duration (minutes)",
+			reminders: "Reminders",
+			remindersDesc: "Popup reminder minutes before the event, separated by commas.",
+			includeDescription: "Include task description",
+			createButton: "Create event",
+			linkOnSaveButton: "Link on save",
+			noCalendars: "No Google calendars are available",
+			invalidEvent: "Enter an event title and date",
+			created: "Google Calendar event created",
+			pending: "Google Calendar event will be created when the task is saved",
 		},
 		storageLocation: {
 			title: {

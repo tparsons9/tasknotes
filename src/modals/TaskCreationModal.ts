@@ -25,6 +25,7 @@ import { shouldShowFilenameShortenedNotice } from "../utils/filenameGenerator";
 import { setTaskModalDetailsEditorValue } from "./taskModalDetailsEditor";
 import { collapseTaskModalDetailsLayout } from "./taskModalLayout";
 import { createTaskNotesLogger } from "../utils/tasknotesLogger";
+import { TaskGoogleCalendarLinkModal } from "./TaskGoogleCalendarLinkModal";
 
 const tasknotesLogger = createTaskNotesLogger({ tag: "Modals/TaskCreationModal" });
 export type { StatusSuggestion } from "./taskCreationSuggest";
@@ -89,6 +90,7 @@ export class TaskCreationModal extends TaskModal {
 	private nlPreviewContainer: HTMLElement;
 	private nlButtonContainer: HTMLElement;
 	private nlpSuggest: NLPSuggest | null = null; // Will be replaced with CodeMirror autocomplete
+	private pendingGoogleCalendarId: string | null = null;
 
 	// Track event listeners for cleanup
 	private eventListeners: Array<{
@@ -159,6 +161,35 @@ export class TaskCreationModal extends TaskModal {
 		) {
 			this.renderProjectsList();
 		}
+	}
+
+	protected shouldShowGoogleCalendarLinkAction(): boolean {
+		return !!this.plugin.taskCalendarSyncService?.isEnabled();
+	}
+
+	protected async getGoogleCalendarLinkTask(): Promise<TaskInfo | null> {
+		if (!this.prepareFormForSave()) {
+			return null;
+		}
+
+		return {
+			...this.buildTaskData(),
+			path: "",
+			title: this.title,
+		} as TaskInfo;
+	}
+
+	protected async createGoogleCalendarLink(draftTask: TaskInfo): Promise<boolean> {
+		new TaskGoogleCalendarLinkModal(this.plugin, {
+			task: draftTask,
+			submitLabel: this.t("modals.googleCalendarLink.linkOnSaveButton"),
+			successMessage: this.t("modals.googleCalendarLink.pending"),
+			onCreate: async ({ calendarId }) => {
+				this.pendingGoogleCalendarId = calendarId || null;
+				return !!this.pendingGoogleCalendarId;
+			},
+		}).open();
+		return false;
 	}
 
 	private createNaturalLanguageInput(container: HTMLElement): void {
@@ -573,7 +604,7 @@ export class TaskCreationModal extends TaskModal {
 		await this.handleSave({ createAnother: shift });
 	}
 
-	async handleSave(options: { createAnother?: boolean } = {}): Promise<void> {
+	private prepareFormForSave(): boolean {
 		// If NLP is enabled and there's content in the NL field, parse it first
 		if (this.plugin.settings.enableNaturalLanguageInput) {
 			const nlContent = this.getNLPInputValue().trim();
@@ -586,7 +617,15 @@ export class TaskCreationModal extends TaskModal {
 
 		if (!this.validateForm()) {
 			new Notice(this.t("modals.taskCreation.notices.titleRequired"));
-			return;
+			return false;
+		}
+
+		return true;
+	}
+
+	private async createTaskFromCurrentForm(): Promise<{ file: TFile; task: TaskInfo } | null> {
+		if (!this.prepareFormForSave()) {
+			return null;
 		}
 
 		try {
@@ -594,6 +633,7 @@ export class TaskCreationModal extends TaskModal {
 			// Disable defaults since they were already applied to form fields in initializeFormData()
 			const result = await this.plugin.taskService.createTask(taskData, {
 				applyDefaults: false,
+				skipCalendarSync: Boolean(this.pendingGoogleCalendarId),
 			});
 			let createdTask = result.taskInfo;
 
@@ -651,6 +691,33 @@ export class TaskCreationModal extends TaskModal {
 				this.options.onTaskCreated(createdTask);
 			}
 
+			return { file: result.file, task: createdTask };
+		} catch (error) {
+			tasknotesLogger.error("Failed to create task:", {
+				category: "persistence",
+				operation: "create-task",
+				error: error,
+			});
+			const message = getTaskCreationFailureNoticeMessage(error);
+			new Notice(this.t("modals.taskCreation.notices.failure", { message }));
+			return null;
+		}
+	}
+
+	async handleSave(options: { createAnother?: boolean } = {}): Promise<void> {
+		const result = await this.createTaskFromCurrentForm();
+		if (!result) {
+			return;
+		}
+
+		try {
+			this.createPendingGoogleCalendarLink(result.task).catch((error) => {
+				tasknotesLogger.error("Failed to create pending Google Calendar link:", {
+					category: "provider",
+					operation: "create-pending-google-calendar-link",
+					error: error,
+				});
+			});
 			await this.openCreatedTaskIfConfigured(result.file, options);
 
 			this.close();
@@ -661,13 +728,25 @@ export class TaskCreationModal extends TaskModal {
 				}, 0);
 			}
 		} catch (error) {
-			tasknotesLogger.error("Failed to create task:", {
+			tasknotesLogger.error("Failed after creating task:", {
 				category: "persistence",
-				operation: "create-task",
+				operation: "post-create-task",
 				error: error,
 			});
-			const message = getTaskCreationFailureNoticeMessage(error);
-			new Notice(this.t("modals.taskCreation.notices.failure", { message }));
+		}
+	}
+
+	private async createPendingGoogleCalendarLink(task: TaskInfo): Promise<void> {
+		const calendarId = this.pendingGoogleCalendarId;
+		if (!calendarId || !this.plugin.taskCalendarSyncService) {
+			return;
+		}
+
+		const created = await this.plugin.taskCalendarSyncService.createLinkedEventForTask(task, {
+			calendarId,
+		});
+		if (created) {
+			this.pendingGoogleCalendarId = null;
 		}
 	}
 

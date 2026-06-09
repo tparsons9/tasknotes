@@ -13,7 +13,7 @@ import {
 } from "./taskModalDetailsEditor";
 import { splitFrontmatterAndBody } from "../utils/helpers";
 import { ProjectSelectModal } from "./ProjectSelectModal";
-import { TaskDependency, Reminder } from "../types";
+import { TaskDependency, Reminder, TaskInfo } from "../types";
 import { DEFAULT_DEPENDENCY_RELTYPE, formatDependencyLink } from "../utils/dependencyUtils";
 import { type LinkServices } from "../ui/renderers/linkRenderer";
 import { generateLink } from "../utils/linkUtils";
@@ -102,6 +102,7 @@ import {
 	type TaskModalMobileKeyboardScrollGuardOptions,
 } from "./taskModalFocusGuards";
 import { createTaskNotesLogger } from "../utils/tasknotesLogger";
+import { TaskGoogleCalendarLinkModal } from "./TaskGoogleCalendarLinkModal";
 
 const tasknotesLogger = createTaskNotesLogger({ tag: "Modals/TaskModal" });
 
@@ -425,7 +426,7 @@ export abstract class TaskModal extends Modal {
 	}
 
 	abstract initializeFormData(): Promise<void>;
-	abstract handleSave(): Promise<void>;
+	abstract handleSave(): Promise<boolean | void>;
 	abstract getModalTitle(): string;
 
 	protected async handleSubmitShortcut(_shift: boolean): Promise<void> {
@@ -553,7 +554,7 @@ export abstract class TaskModal extends Modal {
 	}
 
 	protected getCoreActionIconSpecs(): TaskModalActionIconSpec[] {
-		return [
+		const specs: TaskModalActionIconSpec[] = [
 			{
 				iconName: "dot-square",
 				tooltip: this.t("modals.task.actions.status"),
@@ -603,6 +604,50 @@ export abstract class TaskModal extends Modal {
 				dataType: "reminders",
 			},
 		];
+
+		if (this.shouldShowGoogleCalendarLinkAction()) {
+			specs.push({
+				iconName: "calendar-plus",
+				tooltip: this.t("modals.task.actions.createGoogleCalendarEvent"),
+				onClick: () => {
+					void this.openGoogleCalendarLinkModal();
+				},
+				dataType: "google-calendar",
+			});
+		}
+
+		return specs;
+	}
+
+	protected shouldShowGoogleCalendarLinkAction(): boolean {
+		return false;
+	}
+
+	protected async getGoogleCalendarLinkTask(): Promise<TaskInfo | null> {
+		return null;
+	}
+
+	protected async createGoogleCalendarLink(task: TaskInfo): Promise<boolean> {
+		let created = false;
+		new TaskGoogleCalendarLinkModal(this.plugin, {
+			task,
+			onCreate: async (options) => {
+				created = await this.plugin.taskCalendarSyncService.createLinkedEventForTask(
+					task,
+					options
+				);
+				return created;
+			},
+		}).open();
+		return created;
+	}
+
+	protected async openGoogleCalendarLinkModal(): Promise<void> {
+		const task = await this.getGoogleCalendarLinkTask();
+		if (!task) {
+			return;
+		}
+		await this.createGoogleCalendarLink(task);
 	}
 
 	protected createActionIcon(

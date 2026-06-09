@@ -136,6 +136,27 @@ describe('TaskEditModal - Unsaved Changes Detection', () => {
   // Helper to wait for async operations
   const flushPromises = () => new Promise(resolve => setTimeout(resolve, 0));
 
+  describe('Google Calendar link action', () => {
+    it('should not return a task for linking when saving unsaved edits fails', async () => {
+      modal = new TaskEditModal(mockApp, mockPlugin, { task: mockTask });
+      initializeModalFields(modal, mockTask);
+
+      (modal as any).title = 'Modified Title';
+      mockPlugin.taskService.updateTask.mockRejectedValueOnce(new Error('Save failed'));
+
+      const task = await (modal as any).getGoogleCalendarLinkTask();
+
+      expect(task).toBeNull();
+      expect(mockPlugin.taskService.updateTask).toHaveBeenCalledWith(
+        mockTask,
+        expect.objectContaining({
+          title: 'Modified Title',
+        })
+      );
+      expect(mockPlugin.cacheManager.getTaskInfo).not.toHaveBeenCalled();
+    });
+  });
+
   describe('Close without changes', () => {
     it('should close immediately when no changes exist', () => {
       modal = new TaskEditModal(mockApp, mockPlugin, { task: mockTask });

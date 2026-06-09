@@ -344,6 +344,7 @@ export class MdbaseSpecService {
 			type: "list",
 			items: { type: "string" },
 		});
+		this.addRoleField(lines, "googleCalendarId", { type: "string" });
 		this.addRoleField(lines, "googleCalendarEventId", { type: "string" });
 		this.addRoleField(lines, "googleCalendarExceptionEventId", { type: "string" });
 		this.addRoleField(lines, "googleCalendarExceptionOriginalScheduled", { type: "date" });

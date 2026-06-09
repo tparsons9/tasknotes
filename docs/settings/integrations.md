@@ -49,6 +49,8 @@ Provide **Client ID** and **Client Secret** from Google Cloud Console, then use 
 
 The **Target calendar** setting used for exporting tasks to Google Calendar is also used as the default selection when creating a manual external calendar event from the calendar view. If the target calendar is unavailable, TaskNotes falls back to the provider's primary calendar.
 
+Use **Event creation** to choose whether eligible tasks create Google Calendar events automatically or only when you click **Create Google Calendar event** from a task modal. Manually linked tasks still sync later task updates, completions, and deletions with their linked event.
+
 For timed task exports, **Default reminder** accepts one or more minute offsets separated by commas, such as `60, 1440`. All-day task exports use the target Google Calendar's default reminder settings.
 
 When connected, displays:

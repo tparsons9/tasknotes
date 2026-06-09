@@ -117,6 +117,7 @@ export class TaskService {
 	private createArchiveCalendarDeletionTask(task: TaskInfo, updatedTask: TaskInfo): TaskInfo {
 		return {
 			...updatedTask,
+			googleCalendarId: task.googleCalendarId,
 			googleCalendarEventId: task.googleCalendarEventId,
 			googleCalendarExceptionEventId: task.googleCalendarExceptionEventId,
 			googleCalendarExceptionOriginalScheduled: task.googleCalendarExceptionOriginalScheduled,
@@ -128,6 +129,7 @@ export class TaskService {
 
 	private clearGoogleCalendarMetadata(task: TaskInfo): void {
 		task.googleCalendarEventId = undefined;
+		task.googleCalendarId = undefined;
 		task.googleCalendarExceptionEventId = undefined;
 		task.googleCalendarExceptionOriginalScheduled = undefined;
 		task.googleCalendarMovedOriginalDates = undefined;
@@ -268,10 +270,11 @@ export class TaskService {
 	 * @param taskData - The task data to create
 	 * @param options - Optional settings for task creation
 	 * @param options.applyDefaults - Whether to apply task creation defaults. Set to false for imports (e.g., ICS events) that shouldn't have defaults applied. Defaults to true.
+	 * @param options.skipCalendarSync - Whether to skip automatic Google Calendar sync for this create operation.
 	 */
 	async createTask(
 		taskData: TaskCreationData,
-		options: { applyDefaults?: boolean } = {}
+		options: { applyDefaults?: boolean; skipCalendarSync?: boolean } = {}
 	): Promise<{ file: TFile; taskInfo: TaskInfo }> {
 		return this.taskCreationService.createTask(taskData, options);
 	}
@@ -1362,7 +1365,8 @@ export class TaskService {
 					await this.plugin.taskCalendarSyncService.deleteTaskFromCalendarByPath(
 						task.path,
 						task.googleCalendarEventId,
-						task.googleCalendarExceptionEventId
+						task.googleCalendarExceptionEventId,
+						{ calendarId: task.googleCalendarId }
 					);
 				} catch (error) {
 					tasknotesLogger.warn("Failed to delete task from Google Calendar:", {

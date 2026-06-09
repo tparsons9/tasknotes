@@ -87,4 +87,14 @@ describe("taskModalActionButtons", () => {
 		expect(onSaved).not.toHaveBeenCalled();
 		expect(saveButton.disabled).toBe(false);
 	});
+
+	it("reenables save and skips the saved callback when save returns false", async () => {
+		const saveButton = document.createElement("button");
+		const onSaved = jest.fn();
+
+		await runTaskModalSaveAction(saveButton, () => Promise.resolve(false), onSaved);
+
+		expect(onSaved).not.toHaveBeenCalled();
+		expect(saveButton.disabled).toBe(false);
+	});
 });

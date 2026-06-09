@@ -17,6 +17,7 @@ const CALENDAR_DATA_SIGNATURE_FIELDS: FieldMappingKey[] = [
 	"skippedInstances",
 	"blockedBy",
 	"icsEventId",
+	"googleCalendarId",
 	"googleCalendarEventId",
 	"reminders",
 	"sortOrder",

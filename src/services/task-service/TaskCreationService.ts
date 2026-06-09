@@ -109,9 +109,9 @@ export class TaskCreationService {
 
 	async createTask(
 		taskData: TaskCreationData,
-		options: { applyDefaults?: boolean } = {}
+		options: { applyDefaults?: boolean; skipCalendarSync?: boolean } = {}
 	): Promise<{ file: TFile; taskInfo: TaskInfo }> {
-		const { applyDefaults = true } = options;
+		const { applyDefaults = true, skipCalendarSync = false } = options;
 		const { runtime } = this.deps;
 
 		try {
@@ -350,7 +350,9 @@ export class TaskCreationService {
 			}
 
 			if (
+				!skipCalendarSync &&
 				runtime.taskCalendarSyncService &&
+				runtime.settings.googleCalendarExport.eventCreationMode !== "manual" &&
 				runtime.settings.googleCalendarExport.syncOnTaskCreate
 			) {
 				runtime.taskCalendarSyncService.syncTaskToCalendar(taskInfo).catch((error) => {

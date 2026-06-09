@@ -39,6 +39,26 @@ export type SettingsBuildResult = {
 	shouldPersistMigratedSettings: boolean;
 };
 
+function hasOwnKey(value: unknown, key: string): boolean {
+	return (
+		value !== null &&
+		typeof value === "object" &&
+		Object.prototype.hasOwnProperty.call(value, key)
+	);
+}
+
+function hasLegacyDisabledGoogleCalendarAutoCreate(data: LoadedSettingsData | null): boolean {
+	const googleCalendarExport = data?.googleCalendarExport as
+		| Partial<TaskNotesSettings["googleCalendarExport"]>
+		| undefined;
+	return (
+		!!googleCalendarExport &&
+		hasOwnKey(googleCalendarExport, "syncOnTaskCreate") &&
+		!hasOwnKey(googleCalendarExport, "eventCreationMode") &&
+		googleCalendarExport.syncOnTaskCreate === false
+	);
+}
+
 function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -156,6 +176,15 @@ function migrateLoadedSettingsData(data: LoadedSettingsData | null): LoadedSetti
 		migratedData.customFilenameTemplate = "{{title}}";
 	}
 
+	// Migration: Preserve legacy Google Calendar auto-create opt-outs after
+	// eventCreationMode replaced the old syncOnTaskCreate UI toggle.
+	if (hasLegacyDisabledGoogleCalendarAutoCreate(migratedData)) {
+		migratedData.googleCalendarExport = {
+			...migratedData.googleCalendarExport,
+			eventCreationMode: "manual",
+		} as TaskNotesSettings["googleCalendarExport"];
+	}
+
 	return migratedData;
 }
 
@@ -165,6 +194,8 @@ export function buildSettingsFromLoadedData(data: LoadedSettingsData | null): Se
 		data?.taskFilenameFormat !== "custom" &&
 		data?.customFilenameTemplate === "{title}" &&
 		loadedData?.customFilenameTemplate === "{{title}}";
+	const migratedLegacyGoogleCalendarAutoCreateMode =
+		hasLegacyDisabledGoogleCalendarAutoCreate(data);
 
 	const settings: TaskNotesSettings = {
 		...DEFAULT_SETTINGS,
@@ -189,6 +220,10 @@ export function buildSettingsFromLoadedData(data: LoadedSettingsData | null): Se
 			...DEFAULT_SETTINGS.icsIntegration,
 			...(loadedData?.icsIntegration || {}),
 		},
+		googleCalendarExport: {
+			...DEFAULT_SETTINGS.googleCalendarExport,
+			...(loadedData?.googleCalendarExport || {}),
+		},
 		nlpTriggers: {
 			...DEFAULT_SETTINGS.nlpTriggers,
 			...(loadedData?.nlpTriggers || {}),
@@ -206,7 +241,9 @@ export function buildSettingsFromLoadedData(data: LoadedSettingsData | null): Se
 	return {
 		settings,
 		shouldPersistMigratedSettings:
-			hasMissingMigratedSettings(loadedData) || migratedLegacyCustomFilenameTemplate,
+			hasMissingMigratedSettings(loadedData) ||
+			migratedLegacyCustomFilenameTemplate ||
+			migratedLegacyGoogleCalendarAutoCreateMode,
 	};
 }
 

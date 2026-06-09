@@ -1034,16 +1034,34 @@ export function renderIntegrationsTab(
 
 			group.addSetting(
 				(setting) =>
-					void configureToggleSetting(setting, {
+					void configureDropdownSetting(setting, {
 						name: translate(
-							"settings.integrations.googleCalendarExport.syncOnCreate.name"
+							"settings.integrations.googleCalendarExport.eventCreationMode.name"
 						),
 						desc: translate(
-							"settings.integrations.googleCalendarExport.syncOnCreate.description"
+							"settings.integrations.googleCalendarExport.eventCreationMode.description"
 						),
-						getValue: () => plugin.settings.googleCalendarExport.syncOnTaskCreate,
-						setValue: async (value: boolean) => {
-							plugin.settings.googleCalendarExport.syncOnTaskCreate = value;
+						options: [
+							{
+								value: "automatic",
+								label: translate(
+									"settings.integrations.googleCalendarExport.eventCreationMode.options.automatic"
+								),
+							},
+							{
+								value: "manual",
+								label: translate(
+									"settings.integrations.googleCalendarExport.eventCreationMode.options.manual"
+								),
+							},
+						],
+						getValue: () =>
+							plugin.settings.googleCalendarExport.eventCreationMode || "automatic",
+						setValue: async (value: string) => {
+							const mode = value === "manual" ? "manual" : "automatic";
+							plugin.settings.googleCalendarExport.eventCreationMode = mode;
+							plugin.settings.googleCalendarExport.syncOnTaskCreate =
+								mode === "automatic";
 							save();
 						},
 					})

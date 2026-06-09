@@ -2,12 +2,10 @@ import { FieldMapping, PriorityConfig, StatusConfig, TaskInfo } from "../types";
 import type { UserMappedField } from "../types/settings";
 import {
 	isPropertyForField,
-	isRecognizedProperty,
 	lookupMappingKey,
 	mapTaskFromFrontmatter,
 	mapTaskToFrontmatter,
 	toUserField,
-	toUserFields,
 	validateFieldMapping,
 } from "./fieldMapping";
 
@@ -52,6 +50,9 @@ export class FieldMapper {
 	 * Convert internal field name to user's property name
 	 */
 	toUserField(internalName: keyof FieldMapping): string {
+		if (internalName === "googleCalendarId") {
+			return this.mapping.googleCalendarId;
+		}
 		return toUserField(this.mapping, internalName);
 	}
 
@@ -69,7 +70,7 @@ export class FieldMapper {
 			frontmatter !== null && typeof frontmatter === "object" && !Array.isArray(frontmatter)
 				? (frontmatter as Record<string, unknown>)
 				: undefined;
-		return mapTaskFromFrontmatter(
+		const mapped = mapTaskFromFrontmatter(
 			this.mapping,
 			frontmatterRecord,
 			filePath,
@@ -77,7 +78,21 @@ export class FieldMapper {
 			this.userFields,
 			this.statuses,
 			this.priorities
-		);
+		) as Partial<TaskInfo>;
+
+		if (frontmatterRecord) {
+			const googleCalendarId = frontmatterRecord[this.mapping.googleCalendarId];
+			if (typeof googleCalendarId === "string") {
+				mapped.googleCalendarId = googleCalendarId;
+			} else if (
+				typeof googleCalendarId === "number" ||
+				typeof googleCalendarId === "boolean"
+			) {
+				mapped.googleCalendarId = String(googleCalendarId);
+			}
+		}
+
+		return mapped;
 	}
 
 	/**
@@ -90,7 +105,17 @@ export class FieldMapper {
 		taskTag?: string,
 		storeTitleInFilename?: boolean
 	): Record<string, unknown> {
-		return mapTaskToFrontmatter(this.mapping, taskData, taskTag, storeTitleInFilename, this.userFields);
+		const frontmatter = mapTaskToFrontmatter(
+			this.mapping,
+			taskData,
+			taskTag,
+			storeTitleInFilename,
+			this.userFields
+		);
+		if (taskData.googleCalendarId !== undefined) {
+			frontmatter[this.mapping.googleCalendarId] = taskData.googleCalendarId;
+		}
+		return frontmatter;
 	}
 
 	/**
@@ -125,6 +150,9 @@ export class FieldMapper {
 	 * lookupMappingKey("unknown_field")      // Returns: null
 	 */
 	lookupMappingKey(frontmatterPropertyName: string): keyof FieldMapping | null {
+		if (frontmatterPropertyName === this.mapping.googleCalendarId) {
+			return "googleCalendarId";
+		}
 		return lookupMappingKey(this.mapping, frontmatterPropertyName);
 	}
 
@@ -136,7 +164,7 @@ export class FieldMapper {
 	 * @returns true if the property is recognized, false otherwise
 	 */
 	isRecognizedProperty(frontmatterPropertyName: string): boolean {
-		return isRecognizedProperty(this.mapping, frontmatterPropertyName);
+		return this.lookupMappingKey(frontmatterPropertyName) !== null;
 	}
 
 	/**
@@ -156,6 +184,9 @@ export class FieldMapper {
 	 * isPropertyForField("status", "status")      // true
 	 */
 	isPropertyForField(propertyName: string, internalField: keyof FieldMapping): boolean {
+		if (internalField === "googleCalendarId") {
+			return propertyName === this.mapping.googleCalendarId;
+		}
 		return isPropertyForField(this.mapping, propertyName, internalField);
 	}
 
@@ -171,7 +202,7 @@ export class FieldMapper {
 	 * // Returns: ["task-status", "deadline", "priority"]
 	 */
 	toUserFields(internalFields: (keyof FieldMapping)[]): string[] {
-		return toUserFields(this.mapping, internalFields);
+		return internalFields.map((field) => this.toUserField(field));
 	}
 
 	/**

@@ -188,6 +188,7 @@ export const DEFAULT_ICS_INTEGRATION_SETTINGS: ICSIntegrationSettings = {
 export const DEFAULT_GOOGLE_CALENDAR_EXPORT: GoogleCalendarExportSettings = {
 	enabled: false, // Disabled by default - user must opt-in
 	targetCalendarId: "", // Empty = user must select a calendar
+	eventCreationMode: "automatic",
 	syncOnTaskCreate: true,
 	syncOnTaskUpdate: true,
 	syncOnTaskComplete: true,

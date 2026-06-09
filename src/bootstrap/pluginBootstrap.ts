@@ -383,6 +383,8 @@ export function initializeServicesLazily(plugin: TaskNotesPlugin): void {
 
 							const eventIdKey =
 								plugin.fieldMapper.toUserField("googleCalendarEventId");
+							const calendarIdKey =
+								plugin.fieldMapper.toUserField("googleCalendarId");
 							const exceptionEventIdKey = plugin.fieldMapper.toUserField(
 								"googleCalendarExceptionEventId"
 							);
@@ -390,6 +392,7 @@ export function initializeServicesLazily(plugin: TaskNotesPlugin): void {
 								| { frontmatter?: Record<string, unknown> }
 								| undefined;
 							const eventId = prevCache?.frontmatter?.[eventIdKey];
+							const calendarId = prevCache?.frontmatter?.[calendarIdKey];
 							const exceptionEventId = prevCache?.frontmatter?.[exceptionEventIdKey];
 
 							if (
@@ -403,7 +406,13 @@ export function initializeServicesLazily(plugin: TaskNotesPlugin): void {
 										typeof eventId === "string" ? eventId : undefined,
 										typeof exceptionEventId === "string"
 											? exceptionEventId
-											: undefined
+											: undefined,
+										{
+											calendarId:
+												typeof calendarId === "string"
+													? calendarId
+													: undefined,
+										}
 									)
 									.catch((error) => {
 										tasknotesLogger.warn(

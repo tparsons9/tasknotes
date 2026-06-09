@@ -402,10 +402,90 @@ describe("TaskCreationModal - Fixed Implementation", () => {
 					timeEstimate: 60,
 					details: "Task details",
 				}),
-				{ applyDefaults: false }
+				{ applyDefaults: false, skipCalendarSync: false }
 			);
 
 			expect(Notice).toHaveBeenCalledWith('Task "Test Task" created successfully');
+		});
+
+		it("should create a linked Google Calendar event only after saving with a pending calendar choice", async () => {
+			const createLinkedEventForTask = jest.fn().mockResolvedValue(true);
+			mockPlugin.taskCalendarSyncService = {
+				createLinkedEventForTask,
+			};
+			mockPlugin.taskService.createTask.mockResolvedValue({
+				file: new TFile("test-task.md"),
+				content: "# Test Task",
+				taskInfo: {
+					path: "test-task.md",
+					title: "Test Task",
+					status: "open",
+					priority: "normal",
+					scheduled: "2025-01-15",
+				},
+			});
+
+			(modal as any).pendingGoogleCalendarId = "calendar-2";
+			(modal as any).title = "Test Task";
+			(modal as any).frequencyMode = "NONE";
+
+			await modal.handleSave();
+
+			expect(mockPlugin.taskService.createTask).toHaveBeenCalledWith(
+				expect.objectContaining({
+					title: "Test Task",
+				}),
+				{ applyDefaults: false, skipCalendarSync: true }
+			);
+			expect(createLinkedEventForTask).toHaveBeenCalledWith(
+				expect.objectContaining({
+					path: "test-task.md",
+					title: "Test Task",
+				}),
+				{ calendarId: "calendar-2" }
+			);
+		});
+
+		it("should close the modal before a pending Google Calendar link finishes creating", async () => {
+			let resolveLinkedEvent!: (created: boolean) => void;
+			const createLinkedEventForTask = jest.fn(
+				() =>
+					new Promise<boolean>((resolve) => {
+						resolveLinkedEvent = resolve;
+					})
+			);
+			mockPlugin.taskCalendarSyncService = {
+				createLinkedEventForTask,
+			};
+			mockPlugin.taskService.createTask.mockResolvedValue({
+				file: new TFile("test-task.md"),
+				content: "# Test Task",
+				taskInfo: {
+					path: "test-task.md",
+					title: "Test Task",
+					status: "open",
+					priority: "normal",
+					scheduled: "2025-01-15",
+				},
+			});
+			const closeSpy = jest.spyOn(modal, "close").mockImplementation(() => undefined);
+
+			(modal as any).pendingGoogleCalendarId = "calendar-2";
+			(modal as any).title = "Test Task";
+			(modal as any).frequencyMode = "NONE";
+
+			let saveCompleted = false;
+			const savePromise = modal.handleSave().then(() => {
+				saveCompleted = true;
+			});
+			await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+			expect(createLinkedEventForTask).toHaveBeenCalled();
+			expect(saveCompleted).toBe(true);
+			expect(closeSpy).toHaveBeenCalled();
+
+			resolveLinkedEvent(true);
+			await savePromise;
 		});
 
 		it("should handle task creation errors", async () => {
@@ -434,7 +514,7 @@ describe("TaskCreationModal - Fixed Implementation", () => {
 				expect.objectContaining({
 					recurrence: "FREQ=DAILY;INTERVAL=1",
 				}),
-				{ applyDefaults: false }
+				{ applyDefaults: false, skipCalendarSync: false }
 			);
 		});
 
@@ -451,7 +531,7 @@ describe("TaskCreationModal - Fixed Implementation", () => {
 					contexts: ["work", "urgent"],
 					tags: expect.arrayContaining(["task", "important"]),
 				}),
-				{ applyDefaults: false }
+				{ applyDefaults: false, skipCalendarSync: false }
 			);
 		});
 
@@ -471,7 +551,7 @@ describe("TaskCreationModal - Fixed Implementation", () => {
 					expect.objectContaining({
 						title: "First Task",
 					}),
-					{ applyDefaults: false }
+					{ applyDefaults: false, skipCalendarSync: false }
 				);
 
 				expect(openSpy).not.toHaveBeenCalled();
