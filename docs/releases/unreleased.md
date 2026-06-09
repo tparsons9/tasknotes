@@ -36,6 +36,7 @@ When a change has user-facing documentation, include a canonical tasknotes.dev l
 
 ## Added
 
+- Added an opt-in General setting to store new project tasks beside project notes in watched project subfolders.
 - Added a manual Google Calendar event creation mode for task exports. You can choose whether TaskNotes creates events automatically or only when requested from a task modal.
 
 ## Changed
@@ -46,3 +47,4 @@ When a change has user-facing documentation, include a canonical tasknotes.dev l
 
 - Fixed Google Calendar event creation so manual "Link on save" actions and repeated create clicks do not create duplicate events. The create task modal now closes without waiting for the Google Calendar event request to finish, and existing settings with automatic event creation disabled continue to show manual creation mode.
 - Fixed manual Google Calendar linking so stale linked events are recreated on their selected calendar and edit-modal linking stops when unsaved task edits fail to save.
+- Fixed project subfolder routing so project changes saved from the task edit modal can move tasks to matching watched project subfolders.

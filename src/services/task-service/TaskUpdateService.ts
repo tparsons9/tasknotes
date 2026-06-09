@@ -1,10 +1,12 @@
-import { TFile, type Vault } from "obsidian";
+import { TFile, normalizePath, type TAbstractFile, type Vault } from "obsidian";
 import { AutoArchiveService } from "../AutoArchiveService";
 import { EVENT_TASK_UPDATED, IWebhookNotifier, StatusConfig, TaskInfo } from "../../types";
 import type { TaskNotesSettings } from "../../types/settings";
-import { splitFrontmatterAndBody } from "../../utils/helpers";
+import { ensureFolderExists, splitFrontmatterAndBody } from "../../utils/helpers";
 import { generateUniqueFilename } from "../../utils/filenameGenerator";
 import { getCurrentDateString, getCurrentTimestamp } from "../../utils/dateUtils";
+import { publishUserNotice } from "../../core/userNotices";
+import { resolveProjectTaskFolder } from "../../utils/projectTaskFolderRouting";
 import {
 	applyTaskUpdateFrontmatterChange,
 	buildTaskUpdateRecurrenceUpdates,
@@ -37,7 +39,15 @@ interface TaskUpdateCacheManager {
 }
 
 interface TaskUpdateEmitter {
-	trigger(event: typeof EVENT_TASK_UPDATED, payload: unknown): void;
+	trigger(event: typeof EVENT_TASK_UPDATED | "user-notice", payload: unknown): void;
+}
+
+interface TaskUpdateMetadataCache {
+	getFirstLinkpathDest?(linkpath: string, sourcePath: string): TFile | null;
+}
+
+interface TaskUpdateWorkspace {
+	getActiveFile?(): TFile | null;
 }
 
 interface TaskUpdateCalendarSyncService {
@@ -63,12 +73,16 @@ type TaskUpdateSettings = Pick<
 	| "taskTag"
 	| "taskPropertyName"
 	| "taskPropertyValue"
+	| "enableProjectSubfolderTaskRouting"
+	| "projectAutosuggest"
 >;
 
 export interface TaskUpdateRuntime extends TaskUpdateRenameIndexes {
 	app: {
 		vault: Vault;
 		fileManager: TaskUpdateFileManager;
+		metadataCache?: TaskUpdateMetadataCache;
+		workspace?: TaskUpdateWorkspace;
 	};
 	settings: TaskUpdateSettings;
 	fieldMapper: TaskUpdateFieldMapper;
@@ -98,6 +112,89 @@ export class TaskUpdateService {
 
 	setAutoArchiveService(autoArchiveService?: AutoArchiveService): void {
 		this.deps.autoArchiveService = autoArchiveService;
+	}
+
+	private getActiveFolderPath(): string | undefined {
+		const activeFile = this.deps.runtime.app.workspace?.getActiveFile?.();
+		if (activeFile?.parent?.path !== undefined) {
+			return activeFile.parent.path;
+		}
+		if (typeof activeFile?.path === "string") {
+			return activeFile.path.split("/").slice(0, -1).join("/");
+		}
+		return undefined;
+	}
+
+	private getFileName(path: string): string {
+		return path.split("/").pop() ?? path;
+	}
+
+	private async moveTaskToProjectSubfolderIfNeeded(
+		file: TFile,
+		originalTask: TaskInfo,
+		updatedTask: TaskInfo,
+		projectsWereUpdated: boolean
+	): Promise<TFile> {
+		const { runtime } = this.deps;
+		if (!projectsWereUpdated || !runtime.settings.enableProjectSubfolderTaskRouting) {
+			return file;
+		}
+
+		const destinationFolder = resolveProjectTaskFolder({
+			app: runtime.app,
+			projects: updatedTask.projects,
+			includeFolders: runtime.settings.projectAutosuggest?.includeFolders,
+			activeFolder: this.getActiveFolderPath(),
+			sourcePath: updatedTask.path,
+		});
+		if (!destinationFolder) {
+			return file;
+		}
+
+		const currentFolder = file.parent?.path ?? updatedTask.path.split("/").slice(0, -1).join("/");
+		if (currentFolder === destinationFolder) {
+			return file;
+		}
+
+		const currentPath = updatedTask.path;
+		const newPath = normalizePath(`${destinationFolder}/${this.getFileName(currentPath)}`);
+		if (newPath === currentPath) {
+			return file;
+		}
+
+		try {
+			await ensureFolderExists(runtime.app.vault, destinationFolder);
+
+			const existingFile = runtime.app.vault.getAbstractFileByPath(newPath);
+			if (existingFile) {
+				throw new Error(
+					`A file named "${this.getFileName(currentPath)}" already exists in "${destinationFolder}".`
+				);
+			}
+
+			await runtime.app.fileManager.renameFile(file, newPath);
+			updatedTask.path = newPath;
+			runtime.cacheManager.clearCacheEntry(currentPath);
+			runtime.expandedProjectsService.renamePath(currentPath, newPath);
+			runtime.projectSubtasksService.invalidateIndex();
+
+			const movedFile: TAbstractFile | null = runtime.app.vault.getAbstractFileByPath(newPath);
+			return movedFile instanceof TFile ? movedFile : file;
+		} catch (moveError) {
+			const errorMessage =
+				moveError instanceof Error ? moveError.message : String(moveError);
+			tasknotesLogger.error("Error moving task to project subfolder:", {
+				category: "persistence",
+				operation: "move-task-project-subfolder",
+				details: { taskPath: originalTask.path, destinationFolder },
+				error: errorMessage,
+			});
+			publishUserNotice(
+				runtime.emitter,
+				`Could not move task to project folder: ${errorMessage}`
+			);
+			return file;
+		}
 	}
 
 	async updateTask(
@@ -197,13 +294,24 @@ export class TaskUpdateService {
 				isCompletedStatus: (status) => runtime.statusManager.isCompletedStatus(status),
 			});
 
+			const candidateFinalFile = runtime.app.vault.getAbstractFileByPath(newPath);
+			let finalFile: TFile = candidateFinalFile instanceof TFile ? candidateFinalFile : file;
+
 			if (isRenameNeeded) {
 				runtime.cacheManager.clearCacheEntry(originalTask.path);
 				runtime.expandedProjectsService.renamePath(originalTask.path, newPath);
 				runtime.projectSubtasksService.invalidateIndex();
 			}
+
+			finalFile = await this.moveTaskToProjectSubfolderIfNeeded(
+				finalFile,
+				originalTask,
+				updatedTask,
+				taskUpdates.projects !== undefined
+			);
+			newPath = updatedTask.path;
+
 			try {
-				const finalFile = runtime.app.vault.getAbstractFileByPath(newPath);
 				if (finalFile instanceof TFile && runtime.cacheManager.waitForFreshTaskData) {
 					const keyChanges: Partial<TaskInfo> = {};
 					if (taskUpdates.title !== undefined) keyChanges.title = taskUpdates.title;

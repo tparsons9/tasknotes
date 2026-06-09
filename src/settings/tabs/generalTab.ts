@@ -72,6 +72,23 @@ export function renderGeneralTab(
 			group.addSetting(
 				(setting) =>
 					void configureToggleSetting(setting, {
+						name: translate(
+							"settings.general.taskStorage.projectSubfolderRouting.name"
+						),
+						desc: translate(
+							"settings.general.taskStorage.projectSubfolderRouting.description"
+						),
+						getValue: () => plugin.settings.enableProjectSubfolderTaskRouting,
+						setValue: async (value: boolean) => {
+							plugin.settings.enableProjectSubfolderTaskRouting = value;
+							save();
+						},
+					})
+			);
+
+			group.addSetting(
+				(setting) =>
+					void configureToggleSetting(setting, {
 						name: translate("settings.general.taskStorage.moveArchived.name"),
 						desc: translate("settings.general.taskStorage.moveArchived.description"),
 						getValue: () => plugin.settings.moveArchivedTasks,

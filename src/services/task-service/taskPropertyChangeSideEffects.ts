@@ -76,12 +76,12 @@ async function refreshCache(
 		if (context.cacheManager.waitForFreshTaskData) {
 			await context.cacheManager.waitForFreshTaskData(input.file);
 		}
-		context.cacheManager.updateTaskInfoInCache(input.originalTask.path, input.updatedTask);
+		context.cacheManager.updateTaskInfoInCache(input.updatedTask.path, input.updatedTask);
 	} catch (cacheError) {
 		tasknotesLogger.error("Error updating task cache:", {
 			category: "stale-data",
 			operation: "updating-task-cache",
-			details: { taskPath: input.originalTask.path },
+			details: { taskPath: input.updatedTask.path },
 			error: cacheError instanceof Error ? cacheError.message : String(cacheError),
 		});
 	}
@@ -93,7 +93,7 @@ async function emitTaskUpdateEvents(
 ): Promise<void> {
 	try {
 		context.emitter.trigger(EVENT_TASK_UPDATED, {
-			path: input.originalTask.path,
+			path: input.updatedTask.path,
 			originalTask: input.originalTask,
 			updatedTask: input.updatedTask,
 		});

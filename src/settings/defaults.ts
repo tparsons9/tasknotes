@@ -303,6 +303,7 @@ export const DEFAULT_SETTINGS: TaskNotesSettings = {
 
 	// Inline task conversion defaults
 	inlineTaskConvertFolder: "{{currentNotePath}}",
+	enableProjectSubfolderTaskRouting: false,
 	// Performance defaults
 	disableNoteIndexing: false,
 	// Suggestion performance defaults

@@ -905,6 +905,11 @@ export const en: TranslationTree = {
 					description:
 						"Folder to move tasks to when archived. Supports template variables like {{year}}, {{month}}, {{priority}}, etc.",
 				},
+				projectSubfolderRouting: {
+					name: "Store project tasks in project subfolders",
+					description:
+						"When enabled, new tasks with a project in a project autosuggest include folder are stored beside that project note's subfolder before using the default or inline-created task folder.",
+				},
 			},
 			taskIdentification: {
 				header: "Task identification",
