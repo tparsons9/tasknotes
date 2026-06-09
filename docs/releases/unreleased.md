@@ -38,6 +38,10 @@ When a change has user-facing documentation, include a canonical tasknotes.dev l
 
 - Added a manual Google Calendar event creation mode for task exports. You can choose whether TaskNotes creates events automatically or only when requested from a task modal.
 
+## Changed
+
+- Updated the development build workflow for sandbox vault checkouts so `npm run build:test` builds the installed plugin in place.
+
 ## Fixed
 
 - Fixed Google Calendar event creation so manual "Link on save" actions and repeated create clicks do not create duplicate events. The create task modal now closes without waiting for the Google Calendar event request to finish, and existing settings with automatic event creation disabled continue to show manual creation mode.
